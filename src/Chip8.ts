@@ -304,7 +304,7 @@ module Chip8 {
                 var x = (instr & 0x0F00) >> 16;
                 var y = (instr & 0x00F0) >> 8;
 
-                this.VF = this.V[y] & 0x8000;
+                this.VF = this.V[y] & 0x8000 >> 24;
                 this.V[x] = this.V[y] << 1;
 
                 return true;
