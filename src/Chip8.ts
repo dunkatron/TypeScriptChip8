@@ -36,9 +36,14 @@ module Chip8 {
                 this.x6XNN,
                 this.x7XNN,
                 this.x8XY0,
+                this.x8XY1,
+                this.x8XY2,
+                this.x8XY3,
                 this.x8XY4,
                 this.x8XY5,
-                this.x8XY7
+                this.x8XY6,
+                this.x8XY7,
+                this.x8XYE,
             ];
         }
 
@@ -162,6 +167,48 @@ module Chip8 {
             }
         }
 
+        // Set VX to VX OR VY
+        x8XY1(instr) {
+            if ((instr & 0xF00F) == 0x8001) {
+                var x = (instr & 0x0F00) >> 16;
+                var y = (instr & 0x00F0) >> 8;
+
+                this.V[x] = this.V[y] | this.V[x];
+
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Set VX to VX AND VY
+        x8XY2(instr) {
+            if ((instr && 0xF00F) == 0x8002) {
+                var x = (instr & 0x0F00) >> 16;
+                var y = (instr & 0x00F0) >> 8;
+
+                this.V[x] = this.V[y] & this.V[x];
+
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Set VX to VX XOR VY
+        x8XY3(instr) {
+            if ((instr & 0xF00F) == 0x8003) {
+                var x = (instr & 0x0F00) >> 16;
+                var y = (instr & 0x00F0) >> 8;
+
+                this.V[x] = this.V[y] ^ this.V[x];
+
+                return true;
+            } else {
+                return false;
+            }
+        }
+
         // Add the value of register VY to register VX
         // Set VF to 01 if a carry occurs
         // Set VF to 00 if a carry does not occur
@@ -227,6 +274,38 @@ module Chip8 {
                 }
 
                 this.V[x] = result;
+
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Store the value of register VY shifted right one bit in register VX
+        // Set register VF to the least significant bit prior to the shift
+        x8XY6(instr) {
+            if ((instr & 0xF00F) == 0x8006) {
+                var x = (instr & 0x0F00) >> 16;
+                var y = (instr & 0x00F0) >> 8;
+
+                this.VF = this.V[y] & 0x0001;
+                this.V[x] = this.V[y] >> 1;
+
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Store the value of register VY shifted left one bit in register VX
+        // Set register VF to the most significant bit prior to the shift
+        x8XYE(instr) {
+            if ((instr & 0xF00F) == 0x800E) {
+                var x = (instr & 0x0F00) >> 16;
+                var y = (instr & 0x00F0) >> 8;
+
+                this.VF = this.V[y] & 0x8000;
+                this.V[x] = this.V[y] << 1;
 
                 return true;
             } else {
