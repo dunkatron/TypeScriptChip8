@@ -10,7 +10,7 @@ module Chip8 {
         static HIGH_MEM = 0x1000
 
         private V : Uint8Array; // Registers 0..15
-        private VF : number; // Arithmetic carry array
+        private VF : number; // Arithmetic flag register
         private mem : Uint8Array; // Main memory
 
         private stack : Uint16Array; // Program stack
