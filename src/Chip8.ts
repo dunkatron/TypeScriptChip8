@@ -18,8 +18,8 @@ module Chip8 {
         return (instr & 0x00F0) >> 8;
     }
 
-    class Machine {
-        static LOW_MEM = 0x200;
+    export class Machine {
+        static LOW_MEM = 0x0200;
         static HIGH_MEM = 0x1000
 
         private V: Uint8Array; // Registers 0..15
@@ -45,8 +45,14 @@ module Chip8 {
 
         constructor(private programData: Uint8Array) {
             this.opcodes = [
-                this.x2NNN,
                 this.x00EE,
+                this.x00E0,
+                this.x0NNN,
+                this.x1NNN,
+                this.x2NNN,
+                this.x3XNN,
+                this.x4XNN,
+                this.x5XY0,
                 this.x6XNN,
                 this.x7XNN,
                 this.x8XY0,
@@ -58,7 +64,7 @@ module Chip8 {
                 this.x8XY6,
                 this.x8XY7,
                 this.x8XYE,
-                this.x9XYE,
+                this.x9XY0,
                 this.xANNN,
                 this.xBNNN,
                 this.xDXYN,
@@ -134,7 +140,7 @@ module Chip8 {
 
         // Jump to subroutine at memory address NNN
         x2NNN(instr: number) {
-            if (andCompare(0x2000, instr)) {
+            if ((instr & 0xF000) == 0x2000) {
                 this.pushStack(this.PC);
                 this.PC = instr & 0x0FFF;
 
@@ -161,9 +167,81 @@ module Chip8 {
             }
         }
 
+        // Skips the next instruction if the key stored in VX isn't pressed.
+        x00E0(instr: number) {
+            if (instr == 0x00E0) {
+                // TODO: Implement this opcode
+                
+                assert(false, "Opcode not yet implemented");
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Calls RCA 1802 program at address NNN.
+        x0NNN(instr: number) {
+            if ((instr & 0xF000) == 0x0000) {
+                // TODO: Implement this opcode
+                
+                assert(false, "Opcode not yet implemented");
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Jumps to address NNN.
+        x1NNN(instr: number) {
+            if ((instr & 0xF000) == 0x1000) {
+                // TODO: Implement this opcode
+                
+                assert(false, "Opcode not yet implemented");
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        //Skips the next instruction if VX equals NN.
+        x3XNN(instr: number) {
+            if ((instr & 0xF000) == 0x3000) {
+                // TODO: Implement this opcode
+
+                assert(false, "Opcode not yet implemented");
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Skips the next instruction if VX doesn't equal NN.
+        x4XNN(instr: number) {
+            if ((instr & 0xF000) == 0x4000) {
+                // TODO: Implement this opcode
+
+                assert(false, "Opcode not yet implemented");
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Skips the next instruction if VX equals NN.
+        x5XY0(instr: number) {
+            if ((instr & 0xF00F) == 0x5000) {
+                // TODO: Implement this opcode
+              
+                assert(false, "Opcode not yet implemented");
+                return true;
+            } else {
+                return false;
+            }
+        }
+
         // Store value NN in register VX
         x6XNN(instr: number) {
-            if (andCompare(0x6000, instr)) {
+            if ((instr & 0xF000) == 0x6000) {
                 var register = (0x0F00 & instr) >> 16;
                 var value = 0x00FF & instr;
 
@@ -177,7 +255,7 @@ module Chip8 {
 
         // Add the value NN to register VX
         x7XNN(instr: number) {
-            if (andCompare(0x7000, instr)) {
+            if ((instr & 0xF000) == 0x7000) {
                 var register = (0x0F00 & instr) >> 16;
                 var value = 0x00FF & instr;
 
@@ -349,8 +427,8 @@ module Chip8 {
         }
         
         // Skips the next instruction if VX doesn't equal VY
-        x9XYE(instr: number) {
-            if ((instr & 0xF00F) == 0x900E) {
+        x9XY0(instr: number) {
+            if ((instr & 0xF00F) == 0x9000) {
                 var x = getX(instr);
                 var y = getY(instr);
 
@@ -404,29 +482,26 @@ module Chip8 {
             }
         }
 
+        // Sprites stored in memory at location in index register (I), maximum 
+        // 8bits wide. Wraps around the screen. If when drawn, clears a pixel,
+        // register VF is set to 1 otherwise it is zero. All drawing is XOR 
+        // drawing (i.e. it toggles the screen pixels)
         xDXYN(instr: number) {
             if ((instr & 0xF000) & 0xD000) {
-                /* TODO: Implement this opcode
+                // TODO: Implement this opcode
                 
-                Sprites stored in memory at location in index register (I), 
-                maximum 8bits wide. Wraps around the screen. If when drawn, 
-                clears a pixel, register VF is set to 1 otherwise it is zero.
-                All drawing is XOR drawing (i.e. it toggles the screen pixels)
-                */
-                assert(false, "Not yet implemented");
+                assert(false, "Opcode not yet implemented");
                 return true;
             } else {
                 return false;
             }
         }
 
+        // Skips the next instruction if the key stored in VX is pressed.
         xEX9E(instr: number) {
             if ((instr & 0xF0FF) == 0xE09E) {
-                /* TODO: Implement this opcode
+                // TODO: Implement this opcode
                 
-                Skips the next instruction if the key stored in VX is pressed.
-                */
-
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -435,13 +510,11 @@ module Chip8 {
             }
         }
 
+        // Skips the next instruction if the key stored in VX isn't pressed.
         xEXA1(instr: number) {
             if ((instr & 0xF0FF) == 0xE0A1) {
-                /* TODO: Implement this opcode
+                // TODO: Implement this opcode
                 
-                Skips the next instruction if the key stored in VX isn't pressed.
-                */
-
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -450,13 +523,11 @@ module Chip8 {
             }
         }
 
+        // Sets VX to the value of the delay timer.
         xFX07(instr: number) {
             if ((instr & 0xF0FF) == 0xF007) {
-                /* TODO: Implement this opcode
+                // TODO: Implement this opcode
                 
-                Sets VX to the value of the delay timer.
-                */
-
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -465,13 +536,11 @@ module Chip8 {
             }
         }
 
+        // A key press is awaited, and then stored in VX.
         xFX0A(instr: number) {
             if ((instr & 0xF0FF) == 0xF00A) {
-                /* TODO: Implement this opcode
-               
-               A key press is awaited, and then stored in VX.
-               */
-
+                // TODO: Implement this opcode
+                
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -480,13 +549,11 @@ module Chip8 {
             }
         }
 
+        // Sets the delay timer to VX.
         xFX15(instr: number) {
             if ((instr & 0xF0FF) == 0xF015) {
-                /* TODO: Implement this opcode
+                // TODO: Implement this opcode
                
-               Sets the delay timer to VX.
-               */
-
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -495,13 +562,11 @@ module Chip8 {
             }
         }
 
+        // Sets the sound timer to VX.
         xFX18(instr: number) {
             if ((instr & 0xF0FF) == 0xF018) {
-                /* TODO: Implement this opcode
+                // TODO: Implement this opcode
                
-               Sets the sound timer to VX.
-               */
-
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -510,14 +575,12 @@ module Chip8 {
             }
         }
 
+        // Adds VX to I. VF is set to 1 when range overflow (I+VX>0xFFF), and 
+        // 0 when there isn't. This is undocumented feature of the CHIP-8 and
+        // used by Spacefight 2091! game.
         xFX1E(instr: number) {
             if ((instr & 0xF0FF) == 0xF01E) {
-                /* TODO: Implement this opcode
-               
-               Adds VX to I. VF is set to 1 when range overflow (I+VX>0xFFF),
-               and 0 when there isn't. This is undocumented feature of the 
-               CHIP-8 and used by Spacefight 2091! game.
-               */
+                // TODO: Implement this opcode
 
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
@@ -527,14 +590,11 @@ module Chip8 {
             }
         }
 
+        // Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
         xFX29(instr: number) {
             if ((instr & 0xF0FF) == 0xF029) {
-                /* TODO: Implement this opcode
+                // TODO: Implement this opcode
                
-               Sets I to the location of the sprite for the character in VX.
-               Characters 0-F (in hexadecimal) are represented by a 4x5 font.
-               */
-
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -543,17 +603,15 @@ module Chip8 {
             }
         }
 
+        // Stores the Binary-coded decimal representation of VX, with the most 
+        // significant of three digits at the address in I, the middle digit at
+        // I plus 1, and the least significant digit at I plus 2. (In other 
+        // words, take the decimal representation of VX, place the hundreds 
+        // digit in memory at location in I, the tens digit at location I+1, 
+        // and the ones digit at location I+2.)
         xFX33(instr: number) {
             if ((instr & 0xF0FF) == 0xF033) {
-                /* TODO: Implement this opcode
-               
-               Stores the Binary-coded decimal representation of VX, with the
-               most significant of three digits at the address in I, the middle
-               digit at I plus 1, and the least significant digit at I plus 2. 
-               (In other words, take the decimal representation of VX, place 
-               the hundreds digit in memory at location in I, the tens digit at
-               location I+1, and the ones digit at location I+2.)
-               */
+                // TODO: Implement this opcode
 
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
@@ -562,14 +620,12 @@ module Chip8 {
                 return false;
             }
         }
-        
+
+        // Stores V0 to VX in memory starting at address I.
         xFX55(instr: number) {
             if ((instr & 0xF0FF) == 0xF055) {
-                /* TODO: Implement this opcode
+                // TODO: Implement this opcode
                
-               Stores V0 to VX in memory starting at address I.
-               */
-
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -577,14 +633,12 @@ module Chip8 {
                 return false;
             }
         }
-        
+
+        // Fills V0 to VX with values from memory starting at address I.
         xFX65(instr: number) {
             if ((instr & 0xF0FF) == 0xF065) {
-                /* TODO: Implement this opcode
-               
-               Fills V0 to VX with values from memory starting at address I.
-               */
-
+                // TODO: Implement this opcode
+      
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -592,9 +646,5 @@ module Chip8 {
                 return false;
             }
         }
-    }
-
-    function andCompare(compareValue: number, value: number) {
-        return (compareValue & value) == compareValue;
     }
 }
