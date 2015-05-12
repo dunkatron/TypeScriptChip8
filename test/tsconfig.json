@@ -4,9 +4,9 @@
 		"noImplicitAny": true,
 		"removeComments": false,
 		"sourceMap": true,
-		"out": "build/Chip8.js"
+		"out": "../build/test/Test.js"
 	},
 	"files": [
-		"src/Chip8.ts"
+		"Test.ts"
 	]
 }
