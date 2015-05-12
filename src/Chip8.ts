@@ -1,8 +1,25 @@
 module Chip8 {
-    export function assert(condition: boolean, message: string) {
+    function assert(condition: boolean, message: string) {
         if (!condition) {
-            throw message || "Assertion failed";
+            throw new AssertionException(message || "Assertion failed");
         }
+    }
+
+    class Exception {
+        constructor(private message: string) { }
+        public toString() {
+            return this.message;
+        }
+
+        public getMessage() {
+            return this.message;
+        }
+    }
+
+    class AssertionException extends Exception {
+    }
+
+    class MemoryAccessException extends Exception {
     }
     
     // returns a number in the range [0, max)
@@ -10,6 +27,8 @@ module Chip8 {
         return Math.floor(Math.random() * max);
     }
 
+    // Many instructions take an X or Y argument that's always in the same
+    // place. These helper functions extract them. 
     function getX(instr: number) {
         return (instr & 0x0F00) >> 16;
     }
@@ -17,6 +36,26 @@ module Chip8 {
     function getY(instr: number) {
         return (instr & 0x00F0) >> 8;
     }
+
+    // Character sprites supplied with the interpreter
+    var CharacterSprites = [
+        new Uint8Array([0xF0, 0x90, 0x90, 0x90, 0xF0]), // 0
+        new Uint8Array([0x20, 0x60, 0x20, 0x20, 0x70]), // 1
+        new Uint8Array([0xF0, 0x10, 0xF0, 0x80, 0xF0]), // 2
+        new Uint8Array([0xF0, 0x10, 0xF0, 0x10, 0xF0]), // 3
+        new Uint8Array([0x90, 0x90, 0xF0, 0x10, 0x10]), // 4
+        new Uint8Array([0xF0, 0x80, 0xF0, 0x10, 0xF0]), // 5
+        new Uint8Array([0xF0, 0x80, 0xF0, 0x90, 0xF0]), // 6
+        new Uint8Array([0xF0, 0x10, 0x20, 0x40, 0x40]), // 7
+        new Uint8Array([0xF0, 0x90, 0xF0, 0x90, 0xF0]), // 8
+        new Uint8Array([0xF0, 0x90, 0xF0, 0x10, 0xF0]), // 9
+        new Uint8Array([0xF0, 0x90, 0xF0, 0x90, 0x90]), // A
+        new Uint8Array([0xE0, 0x90, 0xE0, 0x90, 0xE0]), // B
+        new Uint8Array([0xF0, 0x80, 0x80, 0x80, 0xF0]), // C
+        new Uint8Array([0xE0, 0x90, 0x90, 0x90, 0xE0]), // D
+        new Uint8Array([0xF0, 0x80, 0xF0, 0x80, 0xF0]), // E
+        new Uint8Array([0xF0, 0x80, 0xF0, 0x80, 0x80]), // F
+    ];
 
     export class Machine {
         static LOW_MEM = 0x0200;
@@ -27,7 +66,7 @@ module Chip8 {
         private I: number; // Address register
         private mem: Uint8Array; // Main memory
 
-        private stack: Uint16Array; // Program stack
+        private stack: number[]; // Program stack
         private stackPointer: number; // Index of the current top of stack
         private PC: number; // Program counter
 
@@ -42,12 +81,14 @@ module Chip8 {
         // can handle it, it does, then returns true. Otherwise it returns false and we move onto the next opcode
         // function.
         private opcodes: { (instr: number): boolean }[];
+        
+        // Addresses of the character sprites supplied with the interpreter from 0x0-0xF
+        private characterSpriteAddresses: number[];
 
-        constructor(private programData: Uint8Array) {
+        constructor(private programData?: Uint8Array) {
             this.opcodes = [
                 this.x00EE,
                 this.x00E0,
-                this.x0NNN,
                 this.x1NNN,
                 this.x2NNN,
                 this.x3XNN,
@@ -89,29 +130,40 @@ module Chip8 {
             return (instr & 0x00F0) >> 8;
         }
 
-        pushStack(value: number) {
-            this.stack[this.stackPointer] = value;
-            this.stackPointer++;
+        private pushStack(value: number) {
+            this.stack.push(value);
         }
 
         // This actually returns the address that we initially entered the subroutine from
-        popStack(): number {
-            this.stackPointer--;
-            return this.stack[this.stackPointer];
+        private popStack(): number {
+            if (this.stack.length > 0) {
+                return this.stack.pop();
+            } else {
+                throw new MemoryAccessException("Tried to return from subroutine but stack is empty!");
+            }
         }
 
-        run() {
+        public run() {
             // Initialize VM state
             this.terminate = false;
 
             this.V = new Uint8Array(16);
             this.mem = new Uint8Array(4096);
 
-            for (var i = 0; i < this.programData.length; i++) {
-                this.mem[Machine.LOW_MEM + i] = this.programData[i];
+            this.characterSpriteAddresses = [];
+
+            // Load the character sprites into memory
+            var currentOffset = 0;
+            for (var i = 0; i < CharacterSprites.length; i++) {
+                var characterSprite = CharacterSprites[i];
+                this.mem.set(characterSprite, currentOffset);
+                currentOffset += characterSprite.length;
+                this.characterSpriteAddresses.push(currentOffset);
             }
 
-            this.stack = new Uint16Array(16);
+            this.mem.set(this.programData, Machine.LOW_MEM);
+
+            this.stack = [];
             this.delayTimer = 0;
             this.soundTimer = 0;
             this.keys = [];
@@ -121,25 +173,32 @@ module Chip8 {
 
             // Begin execution
             this.PC = 0x200;
-            while (this.PC >= Machine.LOW_MEM && this.PC < Machine.HIGH_MEM && !this.terminate) {
+            
+            // We bust out of this loop in the conditionals at the end of it
+            while (true) {
                 // Grab the instruction at the PC & try to execute it
                 var instr: number = this.mem[this.PC];
 
                 var handled = false;
-                var i = 0;
-                while (!handled && i < this.opcodes.length) {
+                for (var i = 0; i < this.opcodes.length && !handled; i++) {
                     var opcode = this.opcodes[i];
                     handled = opcode(instr);
                 }
 
                 assert(handled, "Failed to handle instruction: " + instr.toString(16) + " at memory address " + this.PC.toString(16));
+
+                if (this.PC < Machine.LOW_MEM || this.PC >= Machine.HIGH_MEM) {
+                    throw new MemoryAccessException("Tried to execute memory outside program memory.");
+                } else if (this.terminate) {
+                    break;
+                }
             }
         }
 
         // Opcode functions
 
         // Jump to subroutine at memory address NNN
-        x2NNN(instr: number) {
+        private x2NNN(instr: number) {
             if ((instr & 0xF000) == 0x2000) {
                 this.pushStack(this.PC);
                 this.PC = instr & 0x0FFF;
@@ -151,14 +210,14 @@ module Chip8 {
         }
 
         // Return from current subroutine
-        x00EE(instr: number) {
+        private x00EE(instr: number) {
             if (instr == 0x00EE) {
                 // Return from the top level routine (terminate)
                 if (this.stackPointer == 0) {
                     this.terminate = true;
                 } else {
                     var retAddr = this.popStack();
-                    this.PC = retAddr + 1;
+                    this.PC = retAddr + 2;
                 }
 
                 return true;
@@ -168,7 +227,7 @@ module Chip8 {
         }
 
         // Skips the next instruction if the key stored in VX isn't pressed.
-        x00E0(instr: number) {
+        private x00E0(instr: number) {
             if (instr == 0x00E0) {
                 // TODO: Implement this opcode
                 
@@ -179,20 +238,8 @@ module Chip8 {
             }
         }
 
-        // Calls RCA 1802 program at address NNN.
-        x0NNN(instr: number) {
-            if ((instr & 0xF000) == 0x0000) {
-                // TODO: Implement this opcode
-                
-                assert(false, "Opcode not yet implemented");
-                return true;
-            } else {
-                return false;
-            }
-        }
-
         // Jumps to address NNN.
-        x1NNN(instr: number) {
+        private x1NNN(instr: number) {
             if ((instr & 0xF000) == 0x1000) {
                 // TODO: Implement this opcode
                 
@@ -204,7 +251,7 @@ module Chip8 {
         }
 
         //Skips the next instruction if VX equals NN.
-        x3XNN(instr: number) {
+        private x3XNN(instr: number) {
             if ((instr & 0xF000) == 0x3000) {
                 // TODO: Implement this opcode
 
@@ -216,7 +263,7 @@ module Chip8 {
         }
 
         // Skips the next instruction if VX doesn't equal NN.
-        x4XNN(instr: number) {
+        private x4XNN(instr: number) {
             if ((instr & 0xF000) == 0x4000) {
                 // TODO: Implement this opcode
 
@@ -228,7 +275,7 @@ module Chip8 {
         }
 
         // Skips the next instruction if VX equals NN.
-        x5XY0(instr: number) {
+        private x5XY0(instr: number) {
             if ((instr & 0xF00F) == 0x5000) {
                 // TODO: Implement this opcode
               
@@ -240,7 +287,7 @@ module Chip8 {
         }
 
         // Store value NN in register VX
-        x6XNN(instr: number) {
+        private x6XNN(instr: number) {
             if ((instr & 0xF000) == 0x6000) {
                 var register = (0x0F00 & instr) >> 16;
                 var value = 0x00FF & instr;
@@ -254,7 +301,7 @@ module Chip8 {
         }
 
         // Add the value NN to register VX
-        x7XNN(instr: number) {
+        private x7XNN(instr: number) {
             if ((instr & 0xF000) == 0x7000) {
                 var register = (0x0F00 & instr) >> 16;
                 var value = 0x00FF & instr;
@@ -268,7 +315,7 @@ module Chip8 {
         }
 
         // Store value of register VY in register VX
-        x8XY0(instr: number) {
+        private x8XY0(instr: number) {
             if ((instr & 0xF00F) == 0x8000) {
                 var x = getX(instr);
                 var y = getY(instr);
@@ -281,7 +328,7 @@ module Chip8 {
         }
 
         // Set VX to VX OR VY
-        x8XY1(instr: number) {
+        private x8XY1(instr: number) {
             if ((instr & 0xF00F) == 0x8001) {
                 var x = getX(instr);
                 var y = getY(instr);
@@ -295,7 +342,7 @@ module Chip8 {
         }
 
         // Set VX to VX AND VY
-        x8XY2(instr: number) {
+        private x8XY2(instr: number) {
             if ((instr && 0xF00F) == 0x8002) {
                 var x = getX(instr);
                 var y = getY(instr);
@@ -309,7 +356,7 @@ module Chip8 {
         }
 
         // Set VX to VX XOR VY
-        x8XY3(instr: number) {
+        private x8XY3(instr: number) {
             if ((instr & 0xF00F) == 0x8003) {
                 var x = getX(instr);
                 var y = getY(instr);
@@ -325,7 +372,7 @@ module Chip8 {
         // Add the value of register VY to register VX
         // Set VF to 01 if a carry occurs
         // Set VF to 00 if a carry does not occur
-        x8XY4(instr: number) {
+        private x8XY4(instr: number) {
             if ((instr & 0xF00F) == 0x8004) {
                 var x = getX(instr);
                 var y = getY(instr);
@@ -349,7 +396,7 @@ module Chip8 {
         // Subtract the value of register VY from register VX
         // Set VF to 00 if a borrow occurs
         // Set VF to 01 if a borrow does not occur
-        x8XY5(instr: number) {
+        private x8XY5(instr: number) {
             if ((instr & 0xF00F) == 0x8005) {
                 var x = getX(instr);
                 var y = getY(instr);
@@ -373,7 +420,7 @@ module Chip8 {
         // Set register VX to the value of VY minus VX
         // Set VF to 00 if a borrow occurs
         // Set VF to 01 if a borrow does not occur
-        x8XY7(instr: number) {
+        private x8XY7(instr: number) {
             if ((instr & 0xF00F) == 0x8007) {
                 var x = getX(instr);
                 var y = getY(instr);
@@ -396,7 +443,7 @@ module Chip8 {
 
         // Store the value of register VY shifted right one bit in register VX
         // Set register VF to the least significant bit prior to the shift
-        x8XY6(instr: number) {
+        private x8XY6(instr: number) {
             if ((instr & 0xF00F) == 0x8006) {
                 var x = getX(instr);
                 var y = getY(instr);
@@ -412,7 +459,7 @@ module Chip8 {
 
         // Store the value of register VY shifted left one bit in register VX
         // Set register VF to the most significant bit prior to the shift
-        x8XYE(instr: number) {
+        private x8XYE(instr: number) {
             if ((instr & 0xF00F) == 0x800E) {
                 var x = getX(instr);
                 var y = getY(instr);
@@ -427,7 +474,7 @@ module Chip8 {
         }
         
         // Skips the next instruction if VX doesn't equal VY
-        x9XY0(instr: number) {
+        private x9XY0(instr: number) {
             if ((instr & 0xF00F) == 0x9000) {
                 var x = getX(instr);
                 var y = getY(instr);
@@ -436,7 +483,7 @@ module Chip8 {
                 var vy = this.V[y];
 
                 if (vx != vy) {
-                    this.PC++;
+                    this.PC += 2;
                 }
 
                 return true;
@@ -445,7 +492,7 @@ module Chip8 {
             }
         }
 
-        xANNN(instr: number) {
+        private xANNN(instr: number) {
             if ((instr & 0xF000) == 0xA000) {
                 var NNN = instr & 0x0FFF;
                 this.I = NNN;
@@ -456,7 +503,7 @@ module Chip8 {
             }
         }
 
-        xBNNN(instr: number) {
+        private xBNNN(instr: number) {
             if ((instr & 0xF000) == 0xB000) {
                 var NNN = instr & 0x0FFF;
                 var V0 = this.V[0];
@@ -469,7 +516,7 @@ module Chip8 {
             }
         }
 
-        xCXNN(instr: number) {
+        private xCXNN(instr: number) {
             if ((instr & 0xF000) == 0xC000) {
                 var x = getX(instr);
                 var NN = instr & 0x00FF;
@@ -486,7 +533,7 @@ module Chip8 {
         // 8bits wide. Wraps around the screen. If when drawn, clears a pixel,
         // register VF is set to 1 otherwise it is zero. All drawing is XOR 
         // drawing (i.e. it toggles the screen pixels)
-        xDXYN(instr: number) {
+        private xDXYN(instr: number) {
             if ((instr & 0xF000) & 0xD000) {
                 // TODO: Implement this opcode
                 
@@ -498,7 +545,7 @@ module Chip8 {
         }
 
         // Skips the next instruction if the key stored in VX is pressed.
-        xEX9E(instr: number) {
+        private xEX9E(instr: number) {
             if ((instr & 0xF0FF) == 0xE09E) {
                 // TODO: Implement this opcode
                 
@@ -511,7 +558,7 @@ module Chip8 {
         }
 
         // Skips the next instruction if the key stored in VX isn't pressed.
-        xEXA1(instr: number) {
+        private xEXA1(instr: number) {
             if ((instr & 0xF0FF) == 0xE0A1) {
                 // TODO: Implement this opcode
                 
@@ -524,7 +571,7 @@ module Chip8 {
         }
 
         // Sets VX to the value of the delay timer.
-        xFX07(instr: number) {
+        private xFX07(instr: number) {
             if ((instr & 0xF0FF) == 0xF007) {
                 // TODO: Implement this opcode
                 
@@ -537,7 +584,7 @@ module Chip8 {
         }
 
         // A key press is awaited, and then stored in VX.
-        xFX0A(instr: number) {
+        private xFX0A(instr: number) {
             if ((instr & 0xF0FF) == 0xF00A) {
                 // TODO: Implement this opcode
                 
@@ -550,7 +597,7 @@ module Chip8 {
         }
 
         // Sets the delay timer to VX.
-        xFX15(instr: number) {
+        private xFX15(instr: number) {
             if ((instr & 0xF0FF) == 0xF015) {
                 // TODO: Implement this opcode
                
@@ -563,7 +610,7 @@ module Chip8 {
         }
 
         // Sets the sound timer to VX.
-        xFX18(instr: number) {
+        private xFX18(instr: number) {
             if ((instr & 0xF0FF) == 0xF018) {
                 // TODO: Implement this opcode
                
@@ -578,7 +625,7 @@ module Chip8 {
         // Adds VX to I. VF is set to 1 when range overflow (I+VX>0xFFF), and 
         // 0 when there isn't. This is undocumented feature of the CHIP-8 and
         // used by Spacefight 2091! game.
-        xFX1E(instr: number) {
+        private xFX1E(instr: number) {
             if ((instr & 0xF0FF) == 0xF01E) {
                 // TODO: Implement this opcode
 
@@ -591,7 +638,7 @@ module Chip8 {
         }
 
         // Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
-        xFX29(instr: number) {
+        private xFX29(instr: number) {
             if ((instr & 0xF0FF) == 0xF029) {
                 // TODO: Implement this opcode
                
@@ -609,7 +656,7 @@ module Chip8 {
         // words, take the decimal representation of VX, place the hundreds 
         // digit in memory at location in I, the tens digit at location I+1, 
         // and the ones digit at location I+2.)
-        xFX33(instr: number) {
+        private xFX33(instr: number) {
             if ((instr & 0xF0FF) == 0xF033) {
                 // TODO: Implement this opcode
 
@@ -622,7 +669,7 @@ module Chip8 {
         }
 
         // Stores V0 to VX in memory starting at address I.
-        xFX55(instr: number) {
+        private xFX55(instr: number) {
             if ((instr & 0xF0FF) == 0xF055) {
                 // TODO: Implement this opcode
                
@@ -635,7 +682,7 @@ module Chip8 {
         }
 
         // Fills V0 to VX with values from memory starting at address I.
-        xFX65(instr: number) {
+        private xFX65(instr: number) {
             if ((instr & 0xF0FF) == 0xF065) {
                 // TODO: Implement this opcode
       

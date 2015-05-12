@@ -1,27 +1,84 @@
+var __extends = this.__extends || function (d, b) {
+    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+    function __() { this.constructor = d; }
+    __.prototype = b.prototype;
+    d.prototype = new __();
+};
 var Chip8;
 (function (Chip8) {
     function assert(condition, message) {
         if (!condition) {
-            throw message || "Assertion failed";
+            throw new AssertionException(message || "Assertion failed");
         }
     }
-    Chip8.assert = assert;
+    var Exception = (function () {
+        function Exception(message) {
+            this.message = message;
+        }
+        Exception.prototype.toString = function () {
+            return this.message;
+        };
+        Exception.prototype.getMessage = function () {
+            return this.message;
+        };
+        return Exception;
+    })();
+    var AssertionException = (function (_super) {
+        __extends(AssertionException, _super);
+        function AssertionException() {
+            _super.apply(this, arguments);
+        }
+        return AssertionException;
+    })(Exception);
+    var MemoryAccessException = (function (_super) {
+        __extends(MemoryAccessException, _super);
+        function MemoryAccessException() {
+            _super.apply(this, arguments);
+        }
+        return MemoryAccessException;
+    })(Exception);
     // returns a number in the range [0, max)
     function randomInt(max) {
         return Math.floor(Math.random() * max);
     }
+    // Many instructions take an X or Y argument that's always in the same
+    // place. These helper functions extract them. 
     function getX(instr) {
         return (instr & 0x0F00) >> 16;
     }
     function getY(instr) {
         return (instr & 0x00F0) >> 8;
     }
+    // Character sprites supplied with the interpreter
+    var CharacterSprites = [
+        new Uint8Array([0xF0, 0x90, 0x90, 0x90, 0xF0]),
+        new Uint8Array([0x20, 0x60, 0x20, 0x20, 0x70]),
+        new Uint8Array([0xF0, 0x10, 0xF0, 0x80, 0xF0]),
+        new Uint8Array([0xF0, 0x10, 0xF0, 0x10, 0xF0]),
+        new Uint8Array([0x90, 0x90, 0xF0, 0x10, 0x10]),
+        new Uint8Array([0xF0, 0x80, 0xF0, 0x10, 0xF0]),
+        new Uint8Array([0xF0, 0x80, 0xF0, 0x90, 0xF0]),
+        new Uint8Array([0xF0, 0x10, 0x20, 0x40, 0x40]),
+        new Uint8Array([0xF0, 0x90, 0xF0, 0x90, 0xF0]),
+        new Uint8Array([0xF0, 0x90, 0xF0, 0x10, 0xF0]),
+        new Uint8Array([0xF0, 0x90, 0xF0, 0x90, 0x90]),
+        new Uint8Array([0xE0, 0x90, 0xE0, 0x90, 0xE0]),
+        new Uint8Array([0xF0, 0x80, 0x80, 0x80, 0xF0]),
+        new Uint8Array([0xE0, 0x90, 0x90, 0x90, 0xE0]),
+        new Uint8Array([0xF0, 0x80, 0xF0, 0x80, 0xF0]),
+        new Uint8Array([0xF0, 0x80, 0xF0, 0x80, 0x80]),
+    ];
     var Machine = (function () {
         function Machine(programData) {
             this.programData = programData;
             this.opcodes = [
-                this.x2NNN,
                 this.x00EE,
+                this.x00E0,
+                this.x1NNN,
+                this.x2NNN,
+                this.x3XNN,
+                this.x4XNN,
+                this.x5XY0,
                 this.x6XNN,
                 this.x7XNN,
                 this.x8XY0,
@@ -33,7 +90,7 @@ var Chip8;
                 this.x8XY6,
                 this.x8XY7,
                 this.x8XYE,
-                this.x9XYE,
+                this.x9XY0,
                 this.xANNN,
                 this.xBNNN,
                 this.xDXYN,
@@ -56,23 +113,33 @@ var Chip8;
             return (instr & 0x00F0) >> 8;
         };
         Machine.prototype.pushStack = function (value) {
-            this.stack[this.stackPointer] = value;
-            this.stackPointer++;
+            this.stack.push(value);
         };
         // This actually returns the address that we initially entered the subroutine from
         Machine.prototype.popStack = function () {
-            this.stackPointer--;
-            return this.stack[this.stackPointer];
+            if (this.stack.length > 0) {
+                return this.stack.pop();
+            }
+            else {
+                throw new MemoryAccessException("Tried to return from subroutine but stack is empty!");
+            }
         };
         Machine.prototype.run = function () {
             // Initialize VM state
             this.terminate = false;
             this.V = new Uint8Array(16);
             this.mem = new Uint8Array(4096);
-            for (var i = 0; i < this.programData.length; i++) {
-                this.mem[Machine.LOW_MEM + i] = this.programData[i];
+            this.characterSpriteAddresses = [];
+            // Load the character sprites into memory
+            var currentOffset = 0;
+            for (var i = 0; i < CharacterSprites.length; i++) {
+                var characterSprite = CharacterSprites[i];
+                this.mem.set(characterSprite, currentOffset);
+                currentOffset += characterSprite.length;
+                this.characterSpriteAddresses.push(currentOffset);
             }
-            this.stack = new Uint16Array(16);
+            this.mem.set(this.programData, Machine.LOW_MEM);
+            this.stack = [];
             this.delayTimer = 0;
             this.soundTimer = 0;
             this.keys = [];
@@ -81,22 +148,28 @@ var Chip8;
             }
             // Begin execution
             this.PC = 0x200;
-            while (this.PC >= Machine.LOW_MEM && this.PC < Machine.HIGH_MEM && !this.terminate) {
+            // We bust out of this loop in the conditionals at the end of it
+            while (true) {
                 // Grab the instruction at the PC & try to execute it
                 var instr = this.mem[this.PC];
                 var handled = false;
-                var i = 0;
-                while (!handled && i < this.opcodes.length) {
+                for (var i = 0; i < this.opcodes.length && !handled; i++) {
                     var opcode = this.opcodes[i];
                     handled = opcode(instr);
                 }
                 assert(handled, "Failed to handle instruction: " + instr.toString(16) + " at memory address " + this.PC.toString(16));
+                if (this.PC < Machine.LOW_MEM || this.PC >= Machine.HIGH_MEM) {
+                    throw new MemoryAccessException("Tried to execute memory outside program memory.");
+                }
+                else if (this.terminate) {
+                    break;
+                }
             }
         };
         // Opcode functions
         // Jump to subroutine at memory address NNN
         Machine.prototype.x2NNN = function (instr) {
-            if (andCompare(0x2000, instr)) {
+            if ((instr & 0xF000) == 0x2000) {
                 this.pushStack(this.PC);
                 this.PC = instr & 0x0FFF;
                 return true;
@@ -114,8 +187,63 @@ var Chip8;
                 }
                 else {
                     var retAddr = this.popStack();
-                    this.PC = retAddr + 1;
+                    this.PC = retAddr + 2;
                 }
+                return true;
+            }
+            else {
+                return false;
+            }
+        };
+        // Skips the next instruction if the key stored in VX isn't pressed.
+        Machine.prototype.x00E0 = function (instr) {
+            if (instr == 0x00E0) {
+                // TODO: Implement this opcode
+                assert(false, "Opcode not yet implemented");
+                return true;
+            }
+            else {
+                return false;
+            }
+        };
+        // Jumps to address NNN.
+        Machine.prototype.x1NNN = function (instr) {
+            if ((instr & 0xF000) == 0x1000) {
+                // TODO: Implement this opcode
+                assert(false, "Opcode not yet implemented");
+                return true;
+            }
+            else {
+                return false;
+            }
+        };
+        //Skips the next instruction if VX equals NN.
+        Machine.prototype.x3XNN = function (instr) {
+            if ((instr & 0xF000) == 0x3000) {
+                // TODO: Implement this opcode
+                assert(false, "Opcode not yet implemented");
+                return true;
+            }
+            else {
+                return false;
+            }
+        };
+        // Skips the next instruction if VX doesn't equal NN.
+        Machine.prototype.x4XNN = function (instr) {
+            if ((instr & 0xF000) == 0x4000) {
+                // TODO: Implement this opcode
+                assert(false, "Opcode not yet implemented");
+                return true;
+            }
+            else {
+                return false;
+            }
+        };
+        // Skips the next instruction if VX equals NN.
+        Machine.prototype.x5XY0 = function (instr) {
+            if ((instr & 0xF00F) == 0x5000) {
+                // TODO: Implement this opcode
+                assert(false, "Opcode not yet implemented");
                 return true;
             }
             else {
@@ -124,7 +252,7 @@ var Chip8;
         };
         // Store value NN in register VX
         Machine.prototype.x6XNN = function (instr) {
-            if (andCompare(0x6000, instr)) {
+            if ((instr & 0xF000) == 0x6000) {
                 var register = (0x0F00 & instr) >> 16;
                 var value = 0x00FF & instr;
                 this.V[register] = value;
@@ -136,7 +264,7 @@ var Chip8;
         };
         // Add the value NN to register VX
         Machine.prototype.x7XNN = function (instr) {
-            if (andCompare(0x7000, instr)) {
+            if ((instr & 0xF000) == 0x7000) {
                 var register = (0x0F00 & instr) >> 16;
                 var value = 0x00FF & instr;
                 this.V[register] += value;
@@ -289,14 +417,14 @@ var Chip8;
             }
         };
         // Skips the next instruction if VX doesn't equal VY
-        Machine.prototype.x9XYE = function (instr) {
-            if ((instr & 0xF00F) == 0x900E) {
+        Machine.prototype.x9XY0 = function (instr) {
+            if ((instr & 0xF00F) == 0x9000) {
                 var x = getX(instr);
                 var y = getY(instr);
                 var vx = this.V[x];
                 var vy = this.V[y];
                 if (vx != vy) {
-                    this.PC++;
+                    this.PC += 2;
                 }
                 return true;
             }
@@ -336,28 +464,24 @@ var Chip8;
                 return false;
             }
         };
+        // Sprites stored in memory at location in index register (I), maximum 
+        // 8bits wide. Wraps around the screen. If when drawn, clears a pixel,
+        // register VF is set to 1 otherwise it is zero. All drawing is XOR 
+        // drawing (i.e. it toggles the screen pixels)
         Machine.prototype.xDXYN = function (instr) {
             if ((instr & 0xF000) & 0xD000) {
-                /* TODO: Implement this opcode
-                
-                Sprites stored in memory at location in index register (I),
-                maximum 8bits wide. Wraps around the screen. If when drawn,
-                clears a pixel, register VF is set to 1 otherwise it is zero.
-                All drawing is XOR drawing (i.e. it toggles the screen pixels)
-                */
-                assert(false, "Not yet implemented");
+                // TODO: Implement this opcode
+                assert(false, "Opcode not yet implemented");
                 return true;
             }
             else {
                 return false;
             }
         };
+        // Skips the next instruction if the key stored in VX is pressed.
         Machine.prototype.xEX9E = function (instr) {
             if ((instr & 0xF0FF) == 0xE09E) {
-                /* TODO: Implement this opcode
-                
-                Skips the next instruction if the key stored in VX is pressed.
-                */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -366,12 +490,10 @@ var Chip8;
                 return false;
             }
         };
+        // Skips the next instruction if the key stored in VX isn't pressed.
         Machine.prototype.xEXA1 = function (instr) {
             if ((instr & 0xF0FF) == 0xE0A1) {
-                /* TODO: Implement this opcode
-                
-                Skips the next instruction if the key stored in VX isn't pressed.
-                */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -380,12 +502,10 @@ var Chip8;
                 return false;
             }
         };
+        // Sets VX to the value of the delay timer.
         Machine.prototype.xFX07 = function (instr) {
             if ((instr & 0xF0FF) == 0xF007) {
-                /* TODO: Implement this opcode
-                
-                Sets VX to the value of the delay timer.
-                */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -394,12 +514,10 @@ var Chip8;
                 return false;
             }
         };
+        // A key press is awaited, and then stored in VX.
         Machine.prototype.xFX0A = function (instr) {
             if ((instr & 0xF0FF) == 0xF00A) {
-                /* TODO: Implement this opcode
-               
-               A key press is awaited, and then stored in VX.
-               */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -408,12 +526,10 @@ var Chip8;
                 return false;
             }
         };
+        // Sets the delay timer to VX.
         Machine.prototype.xFX15 = function (instr) {
             if ((instr & 0xF0FF) == 0xF015) {
-                /* TODO: Implement this opcode
-               
-               Sets the delay timer to VX.
-               */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -422,12 +538,10 @@ var Chip8;
                 return false;
             }
         };
+        // Sets the sound timer to VX.
         Machine.prototype.xFX18 = function (instr) {
             if ((instr & 0xF0FF) == 0xF018) {
-                /* TODO: Implement this opcode
-               
-               Sets the sound timer to VX.
-               */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -436,14 +550,12 @@ var Chip8;
                 return false;
             }
         };
+        // Adds VX to I. VF is set to 1 when range overflow (I+VX>0xFFF), and 
+        // 0 when there isn't. This is undocumented feature of the CHIP-8 and
+        // used by Spacefight 2091! game.
         Machine.prototype.xFX1E = function (instr) {
             if ((instr & 0xF0FF) == 0xF01E) {
-                /* TODO: Implement this opcode
-               
-               Adds VX to I. VF is set to 1 when range overflow (I+VX>0xFFF),
-               and 0 when there isn't. This is undocumented feature of the
-               CHIP-8 and used by Spacefight 2091! game.
-               */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -452,13 +564,10 @@ var Chip8;
                 return false;
             }
         };
+        // Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
         Machine.prototype.xFX29 = function (instr) {
             if ((instr & 0xF0FF) == 0xF029) {
-                /* TODO: Implement this opcode
-               
-               Sets I to the location of the sprite for the character in VX.
-               Characters 0-F (in hexadecimal) are represented by a 4x5 font.
-               */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -467,17 +576,15 @@ var Chip8;
                 return false;
             }
         };
+        // Stores the Binary-coded decimal representation of VX, with the most 
+        // significant of three digits at the address in I, the middle digit at
+        // I plus 1, and the least significant digit at I plus 2. (In other 
+        // words, take the decimal representation of VX, place the hundreds 
+        // digit in memory at location in I, the tens digit at location I+1, 
+        // and the ones digit at location I+2.)
         Machine.prototype.xFX33 = function (instr) {
             if ((instr & 0xF0FF) == 0xF033) {
-                /* TODO: Implement this opcode
-               
-               Stores the Binary-coded decimal representation of VX, with the
-               most significant of three digits at the address in I, the middle
-               digit at I plus 1, and the least significant digit at I plus 2.
-               (In other words, take the decimal representation of VX, place
-               the hundreds digit in memory at location in I, the tens digit at
-               location I+1, and the ones digit at location I+2.)
-               */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -486,12 +593,10 @@ var Chip8;
                 return false;
             }
         };
+        // Stores V0 to VX in memory starting at address I.
         Machine.prototype.xFX55 = function (instr) {
             if ((instr & 0xF0FF) == 0xF055) {
-                /* TODO: Implement this opcode
-               
-               Stores V0 to VX in memory starting at address I.
-               */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -500,12 +605,10 @@ var Chip8;
                 return false;
             }
         };
+        // Fills V0 to VX with values from memory starting at address I.
         Machine.prototype.xFX65 = function (instr) {
             if ((instr & 0xF0FF) == 0xF065) {
-                /* TODO: Implement this opcode
-               
-               Fills V0 to VX with values from memory starting at address I.
-               */
+                // TODO: Implement this opcode
                 var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
@@ -514,12 +617,10 @@ var Chip8;
                 return false;
             }
         };
-        Machine.LOW_MEM = 0x200;
+        Machine.LOW_MEM = 0x0200;
         Machine.HIGH_MEM = 0x1000;
         return Machine;
     })();
-    function andCompare(compareValue, value) {
-        return (compareValue & value) == compareValue;
-    }
+    Chip8.Machine = Machine;
 })(Chip8 || (Chip8 = {}));
 //# sourceMappingURL=Chip8.js.map
