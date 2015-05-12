@@ -36,6 +36,18 @@ module Chip8 {
     function getY(instr: number) {
         return (instr & 0x00F0) >> 8;
     }
+    
+    // The NNN argument to an instruction resides in the last 3 nibbles. This
+    // helper method returns it.
+    function getNNN(instr: number) {
+        return instr & 0x0FFF;
+    }
+    
+    // The KK argument to an instruction resides in the last 3 nibbles. This
+    // helper method returns it.
+    function getKK(instr: number) {
+        return instr & 0x00FF;
+    }
 
     // Character sprites supplied with the interpreter
     var CharacterSprites = [
@@ -91,11 +103,11 @@ module Chip8 {
                 this.x00E0,
                 this.x1NNN,
                 this.x2NNN,
-                this.x3XNN,
-                this.x4XNN,
+                this.x3XKK,
+                this.x4XKK,
                 this.x5XY0,
-                this.x6XNN,
-                this.x7XNN,
+                this.x6XKK,
+                this.x7XKK,
                 this.x8XY0,
                 this.x8XY1,
                 this.x8XY2,
@@ -122,12 +134,19 @@ module Chip8 {
             ];
         }
 
-        private static getX(instr: number) {
-            return (instr & 0x0F00) >> 16;
+        // Get the current value of the PC
+        public getPC() {
+            return this.PC;
         }
 
-        private static getY(instr: number) {
-            return (instr & 0x00F0) >> 8;
+        // Return a copy of this machine's memory
+        public getMemoryCopy() {
+            return this.mem.map(function(item) { return item; });
+        }
+
+        // Return a copy of this machine's V registers
+        public getVRegisters() {
+            return this.V.map(function(item) { return item; });
         }
 
         private pushStack(value: number) {
@@ -177,7 +196,13 @@ module Chip8 {
             // We bust out of this loop in the conditionals at the end of it
             while (true) {
                 // Grab the instruction at the PC & try to execute it
-                var instr: number = this.mem[this.PC];
+                var instr: number = (this.mem[this.PC] << 16) + this.mem[this.PC + 1];
+                
+                // Increment program counter before we execute the opcode. We
+                // do this because jump opcodes rely on having the PC not be
+                // manipulated between their execution and the execution of thes
+                // instruction at the new PC they've set.
+                this.PC += 2;
 
                 var handled = false;
                 for (var i = 0; i < this.opcodes.length && !handled; i++) {
@@ -187,9 +212,9 @@ module Chip8 {
 
                 assert(handled, "Failed to handle instruction: " + instr.toString(16) + " at memory address " + this.PC.toString(16));
 
-                if (this.PC < Machine.LOW_MEM || this.PC >= Machine.HIGH_MEM) {
+                if (this.PC < Machine.LOW_MEM) {
                     throw new MemoryAccessException("Tried to execute memory outside program memory.");
-                } else if (this.terminate) {
+                } else if (this.terminate || this.PC >= Machine.HIGH_MEM) {
                     break;
                 }
             }
@@ -197,11 +222,13 @@ module Chip8 {
 
         // Opcode functions
 
-        // Jump to subroutine at memory address NNN
+        // Calls subroutine at memory address NNN
         private x2NNN(instr: number) {
             if ((instr & 0xF000) == 0x2000) {
+                // Since the main loop increments PC we're actually storing the
+                // return address for this subroutine call.
                 this.pushStack(this.PC);
-                this.PC = instr & 0x0FFF;
+                this.PC = getNNN(instr);
 
                 return true;
             } else {
@@ -216,8 +243,9 @@ module Chip8 {
                 if (this.stackPointer == 0) {
                     this.terminate = true;
                 } else {
-                    var retAddr = this.popStack();
-                    this.PC = retAddr + 2;
+                    // The top of the stack contains the return address for the
+                    // last call (the instruction AFTER the 2NNN instruction)
+                    this.PC = this.popStack();
                 }
 
                 return true;
@@ -226,7 +254,7 @@ module Chip8 {
             }
         }
 
-        // Skips the next instruction if the key stored in VX isn't pressed.
+        // Clears the screen.
         private x00E0(instr: number) {
             if (instr == 0x00E0) {
                 // TODO: Implement this opcode
@@ -241,45 +269,47 @@ module Chip8 {
         // Jumps to address NNN.
         private x1NNN(instr: number) {
             if ((instr & 0xF000) == 0x1000) {
-                // TODO: Implement this opcode
-                
-                assert(false, "Opcode not yet implemented");
+                this.PC = getNNN(instr);
                 return true;
             } else {
                 return false;
             }
         }
 
-        //Skips the next instruction if VX equals NN.
-        private x3XNN(instr: number) {
+        // Skips the next instruction if VX equals KK.
+        private x3XKK(instr: number) {
             if ((instr & 0xF000) == 0x3000) {
-                // TODO: Implement this opcode
+                if (this.V[getX(instr)] == getKK(instr)) {
+                    this.PC += 2;
+                }
 
-                assert(false, "Opcode not yet implemented");
                 return true;
             } else {
                 return false;
             }
         }
 
-        // Skips the next instruction if VX doesn't equal NN.
-        private x4XNN(instr: number) {
+        // Skips the next instruction if VX doesn't equal KK.
+        private x4XKK(instr: number) {
             if ((instr & 0xF000) == 0x4000) {
-                // TODO: Implement this opcode
+                if (this.V[getX(instr)] != getKK(instr)) {
+                    this.PC += 2;
+                }
 
-                assert(false, "Opcode not yet implemented");
                 return true;
             } else {
                 return false;
             }
         }
 
-        // Skips the next instruction if VX equals NN.
+        // Skips the next instruction if VX equals VY.
         private x5XY0(instr: number) {
             if ((instr & 0xF00F) == 0x5000) {
                 // TODO: Implement this opcode
-              
-                assert(false, "Opcode not yet implemented");
+                if (this.V[getX(instr)] == this.V[getY(instr)]) {
+                    this.PC += 2;
+                }
+
                 return true;
             } else {
                 return false;
@@ -287,12 +317,9 @@ module Chip8 {
         }
 
         // Store value NN in register VX
-        private x6XNN(instr: number) {
+        private x6XKK(instr: number) {
             if ((instr & 0xF000) == 0x6000) {
-                var register = (0x0F00 & instr) >> 16;
-                var value = 0x00FF & instr;
-
-                this.V[register] = value;
+                this.V[getX(instr)] = getKK(instr);
 
                 return true;
             } else {
@@ -301,12 +328,11 @@ module Chip8 {
         }
 
         // Add the value NN to register VX
-        private x7XNN(instr: number) {
+        private x7XKK(instr: number) {
             if ((instr & 0xF000) == 0x7000) {
-                var register = (0x0F00 & instr) >> 16;
-                var value = 0x00FF & instr;
-
-                this.V[register] += value;
+                var register = getX(instr);
+                var result = (this.V[getX(instr)] + getKK(instr)) & 0xFFFF;
+                this.V[register] = result;
 
                 return true;
             } else {
@@ -394,8 +420,8 @@ module Chip8 {
         }
 
         // Subtract the value of register VY from register VX
-        // Set VF to 00 if a borrow occurs
-        // Set VF to 01 if a borrow does not occur
+        // Set VF to 0 if a borrow occurs
+        // Set VF to 1 if a borrow does not occur
         private x8XY5(instr: number) {
             if ((instr & 0xF00F) == 0x8005) {
                 var x = getX(instr);
@@ -403,7 +429,7 @@ module Chip8 {
 
                 var result = this.V[x] - this.V[y];
                 if (result < 0) {
-                    result %= 256;
+                    result = 256 - result;
                     this.VF = 0;
                 } else {
                     this.VF = 1;
@@ -427,7 +453,7 @@ module Chip8 {
 
                 var result = this.V[y] - this.V[x];
                 if (result < 0) {
-                    result %= 256;
+                    result = 256 - result;
                     this.VF = 0;
                 } else {
                     this.VF = 1;
@@ -465,7 +491,7 @@ module Chip8 {
                 var y = getY(instr);
 
                 this.VF = this.V[y] & 0x8000 >> 24;
-                this.V[x] = this.V[y] << 1;
+                this.V[x] = (this.V[y] << 1) & 0xFFFF;
 
                 return true;
             } else {
@@ -476,13 +502,7 @@ module Chip8 {
         // Skips the next instruction if VX doesn't equal VY
         private x9XY0(instr: number) {
             if ((instr & 0xF00F) == 0x9000) {
-                var x = getX(instr);
-                var y = getY(instr);
-
-                var vx = this.V[x];
-                var vy = this.V[y];
-
-                if (vx != vy) {
+                if (this.V[getX(instr)] != this.V[getY(instr)]) {
                     this.PC += 2;
                 }
 
@@ -492,10 +512,10 @@ module Chip8 {
             }
         }
 
+        // Set I = NNN
         private xANNN(instr: number) {
             if ((instr & 0xF000) == 0xA000) {
-                var NNN = instr & 0x0FFF;
-                this.I = NNN;
+                this.I = getNNN(instr);
 
                 return true;
             } else {
@@ -503,12 +523,10 @@ module Chip8 {
             }
         }
 
+        // Jump to location nnn + V0.
         private xBNNN(instr: number) {
             if ((instr & 0xF000) == 0xB000) {
-                var NNN = instr & 0x0FFF;
-                var V0 = this.V[0];
-
-                this.PC = NNN + V0;
+                this.PC = getNNN(instr) + this.V[0];
 
                 return true;
             } else {
@@ -516,12 +534,10 @@ module Chip8 {
             }
         }
 
-        private xCXNN(instr: number) {
+        // Set Vx = random byte AND kk.
+        private xCXKK(instr: number) {
             if ((instr & 0xF000) == 0xC000) {
-                var x = getX(instr);
-                var NN = instr & 0x00FF;
-
-                this.V[x] = randomInt(256) & NN;
+                this.V[getX(instr)] = randomInt(256) & getKK(instr);
 
                 return true;
             } else {

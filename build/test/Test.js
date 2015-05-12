@@ -49,6 +49,16 @@ var Chip8;
     function getY(instr) {
         return (instr & 0x00F0) >> 8;
     }
+    // The NNN argument to an instruction resides in the last 3 nibbles. This
+    // helper method returns it.
+    function getNNN(instr) {
+        return instr & 0x0FFF;
+    }
+    // The KK argument to an instruction resides in the last 3 nibbles. This
+    // helper method returns it.
+    function getKK(instr) {
+        return instr & 0x00FF;
+    }
     // Character sprites supplied with the interpreter
     var CharacterSprites = [
         new Uint8Array([0xF0, 0x90, 0x90, 0x90, 0xF0]),
@@ -76,11 +86,11 @@ var Chip8;
                 this.x00E0,
                 this.x1NNN,
                 this.x2NNN,
-                this.x3XNN,
-                this.x4XNN,
+                this.x3XKK,
+                this.x4XKK,
                 this.x5XY0,
-                this.x6XNN,
-                this.x7XNN,
+                this.x6XKK,
+                this.x7XKK,
                 this.x8XY0,
                 this.x8XY1,
                 this.x8XY2,
@@ -106,11 +116,17 @@ var Chip8;
                 this.xFX65,
             ];
         }
-        Machine.getX = function (instr) {
-            return (instr & 0x0F00) >> 16;
+        // Get the current value of the PC
+        Machine.prototype.getPC = function () {
+            return this.PC;
         };
-        Machine.getY = function (instr) {
-            return (instr & 0x00F0) >> 8;
+        // Return a copy of this machine's memory
+        Machine.prototype.getMemoryCopy = function () {
+            return this.mem.map(function (item) { return item; });
+        };
+        // Return a copy of this machine's V registers
+        Machine.prototype.getVRegisters = function () {
+            return this.V.map(function (item) { return item; });
         };
         Machine.prototype.pushStack = function (value) {
             this.stack.push(value);
@@ -151,27 +167,34 @@ var Chip8;
             // We bust out of this loop in the conditionals at the end of it
             while (true) {
                 // Grab the instruction at the PC & try to execute it
-                var instr = this.mem[this.PC];
+                var instr = (this.mem[this.PC] << 16) + this.mem[this.PC + 1];
+                // Increment program counter before we execute the opcode. We
+                // do this because jump opcodes rely on having the PC not be
+                // manipulated between their execution and the execution of thes
+                // instruction at the new PC they've set.
+                this.PC += 2;
                 var handled = false;
                 for (var i = 0; i < this.opcodes.length && !handled; i++) {
                     var opcode = this.opcodes[i];
                     handled = opcode(instr);
                 }
                 assert(handled, "Failed to handle instruction: " + instr.toString(16) + " at memory address " + this.PC.toString(16));
-                if (this.PC < Machine.LOW_MEM || this.PC >= Machine.HIGH_MEM) {
+                if (this.PC < Machine.LOW_MEM) {
                     throw new MemoryAccessException("Tried to execute memory outside program memory.");
                 }
-                else if (this.terminate) {
+                else if (this.terminate || this.PC >= Machine.HIGH_MEM) {
                     break;
                 }
             }
         };
         // Opcode functions
-        // Jump to subroutine at memory address NNN
+        // Calls subroutine at memory address NNN
         Machine.prototype.x2NNN = function (instr) {
             if ((instr & 0xF000) == 0x2000) {
+                // Since the main loop increments PC we're actually storing the
+                // return address for this subroutine call.
                 this.pushStack(this.PC);
-                this.PC = instr & 0x0FFF;
+                this.PC = getNNN(instr);
                 return true;
             }
             else {
@@ -186,8 +209,9 @@ var Chip8;
                     this.terminate = true;
                 }
                 else {
-                    var retAddr = this.popStack();
-                    this.PC = retAddr + 2;
+                    // The top of the stack contains the return address for the
+                    // last call (the instruction AFTER the 2NNN instruction)
+                    this.PC = this.popStack();
                 }
                 return true;
             }
@@ -195,7 +219,7 @@ var Chip8;
                 return false;
             }
         };
-        // Skips the next instruction if the key stored in VX isn't pressed.
+        // Clears the screen.
         Machine.prototype.x00E0 = function (instr) {
             if (instr == 0x00E0) {
                 // TODO: Implement this opcode
@@ -209,41 +233,44 @@ var Chip8;
         // Jumps to address NNN.
         Machine.prototype.x1NNN = function (instr) {
             if ((instr & 0xF000) == 0x1000) {
-                // TODO: Implement this opcode
-                assert(false, "Opcode not yet implemented");
+                this.PC = getNNN(instr);
                 return true;
             }
             else {
                 return false;
             }
         };
-        //Skips the next instruction if VX equals NN.
-        Machine.prototype.x3XNN = function (instr) {
+        // Skips the next instruction if VX equals KK.
+        Machine.prototype.x3XKK = function (instr) {
             if ((instr & 0xF000) == 0x3000) {
-                // TODO: Implement this opcode
-                assert(false, "Opcode not yet implemented");
+                if (this.V[getX(instr)] == getKK(instr)) {
+                    this.PC += 2;
+                }
                 return true;
             }
             else {
                 return false;
             }
         };
-        // Skips the next instruction if VX doesn't equal NN.
-        Machine.prototype.x4XNN = function (instr) {
+        // Skips the next instruction if VX doesn't equal KK.
+        Machine.prototype.x4XKK = function (instr) {
             if ((instr & 0xF000) == 0x4000) {
-                // TODO: Implement this opcode
-                assert(false, "Opcode not yet implemented");
+                if (this.V[getX(instr)] != getKK(instr)) {
+                    this.PC += 2;
+                }
                 return true;
             }
             else {
                 return false;
             }
         };
-        // Skips the next instruction if VX equals NN.
+        // Skips the next instruction if VX equals VY.
         Machine.prototype.x5XY0 = function (instr) {
             if ((instr & 0xF00F) == 0x5000) {
                 // TODO: Implement this opcode
-                assert(false, "Opcode not yet implemented");
+                if (this.V[getX(instr)] == this.V[getY(instr)]) {
+                    this.PC += 2;
+                }
                 return true;
             }
             else {
@@ -251,11 +278,9 @@ var Chip8;
             }
         };
         // Store value NN in register VX
-        Machine.prototype.x6XNN = function (instr) {
+        Machine.prototype.x6XKK = function (instr) {
             if ((instr & 0xF000) == 0x6000) {
-                var register = (0x0F00 & instr) >> 16;
-                var value = 0x00FF & instr;
-                this.V[register] = value;
+                this.V[getX(instr)] = getKK(instr);
                 return true;
             }
             else {
@@ -263,11 +288,11 @@ var Chip8;
             }
         };
         // Add the value NN to register VX
-        Machine.prototype.x7XNN = function (instr) {
+        Machine.prototype.x7XKK = function (instr) {
             if ((instr & 0xF000) == 0x7000) {
-                var register = (0x0F00 & instr) >> 16;
-                var value = 0x00FF & instr;
-                this.V[register] += value;
+                var register = getX(instr);
+                var result = (this.V[getX(instr)] + getKK(instr)) & 0xFFFF;
+                this.V[register] = result;
                 return true;
             }
             else {
@@ -345,15 +370,15 @@ var Chip8;
             }
         };
         // Subtract the value of register VY from register VX
-        // Set VF to 00 if a borrow occurs
-        // Set VF to 01 if a borrow does not occur
+        // Set VF to 0 if a borrow occurs
+        // Set VF to 1 if a borrow does not occur
         Machine.prototype.x8XY5 = function (instr) {
             if ((instr & 0xF00F) == 0x8005) {
                 var x = getX(instr);
                 var y = getY(instr);
                 var result = this.V[x] - this.V[y];
                 if (result < 0) {
-                    result %= 256;
+                    result = 256 - result;
                     this.VF = 0;
                 }
                 else {
@@ -375,7 +400,7 @@ var Chip8;
                 var y = getY(instr);
                 var result = this.V[y] - this.V[x];
                 if (result < 0) {
-                    result %= 256;
+                    result = 256 - result;
                     this.VF = 0;
                 }
                 else {
@@ -409,7 +434,7 @@ var Chip8;
                 var x = getX(instr);
                 var y = getY(instr);
                 this.VF = this.V[y] & 0x8000 >> 24;
-                this.V[x] = this.V[y] << 1;
+                this.V[x] = (this.V[y] << 1) & 0xFFFF;
                 return true;
             }
             else {
@@ -419,11 +444,7 @@ var Chip8;
         // Skips the next instruction if VX doesn't equal VY
         Machine.prototype.x9XY0 = function (instr) {
             if ((instr & 0xF00F) == 0x9000) {
-                var x = getX(instr);
-                var y = getY(instr);
-                var vx = this.V[x];
-                var vy = this.V[y];
-                if (vx != vy) {
+                if (this.V[getX(instr)] != this.V[getY(instr)]) {
                     this.PC += 2;
                 }
                 return true;
@@ -432,32 +453,30 @@ var Chip8;
                 return false;
             }
         };
+        // Set I = NNN
         Machine.prototype.xANNN = function (instr) {
             if ((instr & 0xF000) == 0xA000) {
-                var NNN = instr & 0x0FFF;
-                this.I = NNN;
+                this.I = getNNN(instr);
                 return true;
             }
             else {
                 return false;
             }
         };
+        // Jump to location nnn + V0.
         Machine.prototype.xBNNN = function (instr) {
             if ((instr & 0xF000) == 0xB000) {
-                var NNN = instr & 0x0FFF;
-                var V0 = this.V[0];
-                this.PC = NNN + V0;
+                this.PC = getNNN(instr) + this.V[0];
                 return true;
             }
             else {
                 return false;
             }
         };
-        Machine.prototype.xCXNN = function (instr) {
+        // Set Vx = random byte AND kk.
+        Machine.prototype.xCXKK = function (instr) {
             if ((instr & 0xF000) == 0xC000) {
-                var x = getX(instr);
-                var NN = instr & 0x00FF;
-                this.V[x] = randomInt(256) & NN;
+                this.V[getX(instr)] = randomInt(256) & getKK(instr);
                 return true;
             }
             else {
