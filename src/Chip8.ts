@@ -6,7 +6,9 @@ module Chip8 {
     }
 
     class Exception {
-        constructor(private message: string) { }
+        constructor(private message: string) {
+        }
+
         public toString() {
             return this.message;
         }
@@ -21,7 +23,7 @@ module Chip8 {
 
     class MemoryAccessException extends Exception {
     }
-    
+
     // returns a number in the range [0, max)
     function randomInt(max: number) {
         return Math.floor(Math.random() * max);
@@ -36,13 +38,13 @@ module Chip8 {
     function getY(instr: number) {
         return (instr & 0x00F0) >> 8;
     }
-    
+
     // The NNN argument to an instruction resides in the last 3 nibbles. This
     // helper method returns it.
     function getNNN(instr: number) {
         return instr & 0x0FFF;
     }
-    
+
     // The KK argument to an instruction resides in the last 3 nibbles. This
     // helper method returns it.
     function getKK(instr: number) {
@@ -82,18 +84,16 @@ module Chip8 {
         private stackPointer: number; // Index of the current top of stack
         private PC: number; // Program counter
 
-        private delayTimer: number;
-        private soundTimer: number;
+        private delayTimerEnd: Date;
+        private soundTimerEnd: Date;
 
         private terminate: boolean; // If true after a cycle, the program will terminate
-
-        private keys: boolean[];
 
         // Array of opcodes to try in order. For each one, we pass the instruction into the function and if it
         // can handle it, it does, then returns true. Otherwise it returns false and we move onto the next opcode
         // function.
         private opcodes: { (instr: number): boolean }[];
-        
+
         // Addresses of the character sprites supplied with the interpreter from 0x0-0xF
         private characterSpriteAddresses: number[];
 
@@ -121,6 +121,7 @@ module Chip8 {
                 this.xANNN,
                 this.xBNNN,
                 this.xDXYN,
+                this.xEXA1,
                 this.xEX9E,
                 this.xFX07,
                 this.xFX0A,
@@ -141,12 +142,12 @@ module Chip8 {
 
         // Return a copy of this machine's memory
         public getMemoryCopy() {
-            return this.mem.map(function(item) { return item; });
+            return new Uint8Array(this.mem);
         }
 
         // Return a copy of this machine's V registers
         public getVRegisters() {
-            return this.V.map(function(item) { return item; });
+            return new Uint8Array(this.V);
         }
 
         private pushStack(value: number) {
@@ -162,6 +163,26 @@ module Chip8 {
             }
         }
 
+        // Returns true if the given key (0-F) is currently down
+        private getKeyPressed(key: number) {
+            // TODO: Implement this method
+            return false;
+        }
+
+        // Blocks until a key is pressed, then returns that key's value
+        private getKey() {
+            // TODO: Implement this method
+            return 0;
+        }
+
+        private startSound() {
+            // TODO: Implement this method
+        }
+
+        private stopSound() {
+            // TODO: Implement this method
+        }
+
         public run() {
             // Initialize VM state
             this.terminate = false;
@@ -174,30 +195,26 @@ module Chip8 {
             // Load the character sprites into memory
             var currentOffset = 0;
             for (var i = 0; i < CharacterSprites.length; i++) {
+                this.characterSpriteAddresses.push(currentOffset);
                 var characterSprite = CharacterSprites[i];
                 this.mem.set(characterSprite, currentOffset);
                 currentOffset += characterSprite.length;
-                this.characterSpriteAddresses.push(currentOffset);
             }
 
             this.mem.set(this.programData, Machine.LOW_MEM);
 
             this.stack = [];
-            this.delayTimer = 0;
-            this.soundTimer = 0;
-            this.keys = [];
-            for (var i = 0; i < 16; i++) {
-                this.keys.push(false);
-            }
+            this.delayTimerEnd = null;
+            this.soundTimerEnd = null;
 
             // Begin execution
             this.PC = 0x200;
-            
+
             // We bust out of this loop in the conditionals at the end of it
             while (true) {
                 // Grab the instruction at the PC & try to execute it
                 var instr: number = (this.mem[this.PC] << 16) + this.mem[this.PC + 1];
-                
+
                 // Increment program counter before we execute the opcode. We
                 // do this because jump opcodes rely on having the PC not be
                 // manipulated between their execution and the execution of thes
@@ -216,6 +233,16 @@ module Chip8 {
                     throw new MemoryAccessException("Tried to execute memory outside program memory.");
                 } else if (this.terminate || this.PC >= Machine.HIGH_MEM) {
                     break;
+                }
+
+                var now = new Date();
+                if (this.soundTimerEnd && now > this.soundTimerEnd) {
+                    this.soundTimerEnd = null;
+                    this.stopSound();
+                }
+
+                if (this.delayTimerEnd && now > this.delayTimerEnd) {
+                    this.delayTimerEnd = null;
                 }
             }
         }
@@ -258,7 +285,7 @@ module Chip8 {
         private x00E0(instr: number) {
             if (instr == 0x00E0) {
                 // TODO: Implement this opcode
-                
+
                 assert(false, "Opcode not yet implemented");
                 return true;
             } else {
@@ -498,7 +525,7 @@ module Chip8 {
                 return false;
             }
         }
-        
+
         // Skips the next instruction if VX doesn't equal VY
         private x9XY0(instr: number) {
             if ((instr & 0xF00F) == 0x9000) {
@@ -552,20 +579,7 @@ module Chip8 {
         private xDXYN(instr: number) {
             if ((instr & 0xF000) & 0xD000) {
                 // TODO: Implement this opcode
-                
-                assert(false, "Opcode not yet implemented");
-                return true;
-            } else {
-                return false;
-            }
-        }
 
-        // Skips the next instruction if the key stored in VX is pressed.
-        private xEX9E(instr: number) {
-            if ((instr & 0xF0FF) == 0xE09E) {
-                // TODO: Implement this opcode
-                
-                var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
             } else {
@@ -576,10 +590,22 @@ module Chip8 {
         // Skips the next instruction if the key stored in VX isn't pressed.
         private xEXA1(instr: number) {
             if ((instr & 0xF0FF) == 0xE0A1) {
-                // TODO: Implement this opcode
-                
+                if (!this.getKeyPressed(getX(instr))) {
+                    this.PC += 2;
+                }
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Skips the next instruction if the key stored in VX is pressed.
+        private xEX9E(instr: number) {
+            if ((instr & 0xF0FF) == 0xE09E) {
                 var x = getX(instr);
-                assert(false, "Opcode not yet implemented");
+                if (this.getKeyPressed(getX(instr))) {
+                    this.PC += 2;
+                }
                 return true;
             } else {
                 return false;
@@ -589,10 +615,18 @@ module Chip8 {
         // Sets VX to the value of the delay timer.
         private xFX07(instr: number) {
             if ((instr & 0xF0FF) == 0xF007) {
-                // TODO: Implement this opcode
-                
-                var x = getX(instr);
-                assert(false, "Opcode not yet implemented");
+                if (this.delayTimerEnd) {
+                    var diff = new Date(this.delayTimerEnd.getTime() - new Date().getTime());
+                    var time = diff.getTime();
+                    if (time < 0) {
+                        time = 0;
+                    }
+
+                    time = Math.floor(time / 1000 * 60);
+                    this.V[getX(instr)] = time;
+                } else {
+                    this.V[getX(instr)] = 0;
+                }
                 return true;
             } else {
                 return false;
@@ -602,23 +636,23 @@ module Chip8 {
         // A key press is awaited, and then stored in VX.
         private xFX0A(instr: number) {
             if ((instr & 0xF0FF) == 0xF00A) {
-                // TODO: Implement this opcode
-                
-                var x = getX(instr);
-                assert(false, "Opcode not yet implemented");
+                this.V[getX(instr)] = this.getKey();
                 return true;
             } else {
                 return false;
             }
         }
 
+        static dateSecondsInFuture(seconds: number) {
+            return new Date(new Date().getTime() + seconds * 1000);
+        }
+
         // Sets the delay timer to VX.
         private xFX15(instr: number) {
             if ((instr & 0xF0FF) == 0xF015) {
-                // TODO: Implement this opcode
-               
-                var x = getX(instr);
-                assert(false, "Opcode not yet implemented");
+                var Vx = this.V[getX(instr)];
+                var seconds = Vx / 60;
+                this.delayTimerEnd = Machine.dateSecondsInFuture(seconds);
                 return true;
             } else {
                 return false;
@@ -628,10 +662,15 @@ module Chip8 {
         // Sets the sound timer to VX.
         private xFX18(instr: number) {
             if ((instr & 0xF0FF) == 0xF018) {
-                // TODO: Implement this opcode
-               
-                var x = getX(instr);
-                assert(false, "Opcode not yet implemented");
+                var Vx = this.V[getX(instr)];
+                if (Vx == 0) {
+                    this.soundTimerEnd = null;
+                    this.stopSound();
+                } else {
+                    this.startSound();
+                    var seconds = Vx / 60;
+                    this.soundTimerEnd = Machine.dateSecondsInFuture(seconds);
+                }
                 return true;
             } else {
                 return false;
@@ -645,7 +684,6 @@ module Chip8 {
             if ((instr & 0xF0FF) == 0xF01E) {
                 // TODO: Implement this opcode
 
-                var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
             } else {
@@ -656,10 +694,8 @@ module Chip8 {
         // Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
         private xFX29(instr: number) {
             if ((instr & 0xF0FF) == 0xF029) {
-                // TODO: Implement this opcode
-               
-                var x = getX(instr);
-                assert(false, "Opcode not yet implemented");
+                var Vx = this.V[getX(instr)];
+                this.I = this.characterSpriteAddresses[Vx];
                 return true;
             } else {
                 return false;
@@ -676,7 +712,6 @@ module Chip8 {
             if ((instr & 0xF0FF) == 0xF033) {
                 // TODO: Implement this opcode
 
-                var x = getX(instr);
                 assert(false, "Opcode not yet implemented");
                 return true;
             } else {
@@ -687,10 +722,17 @@ module Chip8 {
         // Stores V0 to VX in memory starting at address I.
         private xFX55(instr: number) {
             if ((instr & 0xF0FF) == 0xF055) {
-                // TODO: Implement this opcode
-               
                 var x = getX(instr);
-                assert(false, "Opcode not yet implemented");
+
+                for (var i = 0; i <= x; i++) {
+                    var addr = this.I + i;
+                    if (addr < Machine.LOW_MEM || addr >= Machine.HIGH_MEM) {
+                        throw new MemoryAccessException("Tried to access memory outside writable range: " + addr);
+                    }
+
+                    this.mem[addr] = this.V[i];
+                }
+
                 return true;
             } else {
                 return false;
@@ -700,10 +742,16 @@ module Chip8 {
         // Fills V0 to VX with values from memory starting at address I.
         private xFX65(instr: number) {
             if ((instr & 0xF0FF) == 0xF065) {
-                // TODO: Implement this opcode
-      
                 var x = getX(instr);
-                assert(false, "Opcode not yet implemented");
+
+                for (var i = 0; i <= x; i++) {
+                    var addr = this.I + i;
+                    if (addr < Machine.LOW_MEM || addr >= Machine.HIGH_MEM) {
+                        throw new MemoryAccessException("Tried to access memory outside writable range: " + addr);
+                    }
+
+                    this.V[i] = this.mem[addr];
+                }
                 return true;
             } else {
                 return false;
