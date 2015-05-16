@@ -4,9 +4,10 @@
     "noImplicitAny": true,
     "removeComments": false,
     "sourceMap": true,
-    "out": "../build/lib/Chip8.js"
+    "out": "./bin/Chip8.js",
+    "declaration": true
   },
   "files": [
-    "Chip8.ts"
+    "./src/Chip8.ts"
   ]
 }

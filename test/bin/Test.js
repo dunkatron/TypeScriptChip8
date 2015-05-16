@@ -1,3 +1,143 @@
+var TestRunner = (function () {
+    function TestRunner(tests) {
+        this.tests = tests;
+    }
+    TestRunner.prototype.run = function () {
+        var succeeded = true;
+        var lastMessage = null;
+        var tester = {
+            ok: function (result, message) {
+                if (!result) {
+                    succeeded = result;
+                    lastMessage = message || "No message provided.";
+                }
+            }
+        };
+        for (var _i = 0, _a = this.tests; _i < _a.length; _i++) {
+            var test = _a[_i];
+            test(tester);
+            if (!succeeded) {
+                break;
+            }
+        }
+        if (succeeded) {
+            console.log("All tests succeeded.");
+        }
+        else {
+            console.log("Test failed: " + lastMessage);
+        }
+    };
+    return TestRunner;
+})();
+function DumpMemory(memory) {
+    var output = "";
+    for (var i = 0; i < memory.length; i++) {
+        var numString = memory[i].toString(16);
+        if (numString.length == 1) {
+            numString = "0" + numString;
+        }
+        output += numString;
+        if ((i % 8) == 7 && i > 0) {
+            output += "\n";
+        }
+        else if ((i % 2) != 0) {
+            output += " ";
+        }
+    }
+    return output;
+}
+function convertUint16ArrayToUint8Array(inputArray) {
+    var outputArray = new Uint8Array(inputArray.length * 2);
+    for (var i = 0; i < inputArray.length; i++) {
+        var value16 = inputArray[i];
+        outputArray[i * 2 + 1] = value16 & 0xFF;
+        value16 >>= 8;
+        outputArray[i * 2] = value16 & 0xFF;
+    }
+    return outputArray;
+}
+/// <reference path='../include.d.ts' />
+var BasicTests;
+(function (BasicTests) {
+    var hardware = {
+        deliverFramebuffer: function (framebuffer) {
+            // Don't care about the framebuffer
+        },
+        waitForKeyPress: function () {
+            // Don't care about keypresses
+            return 0xF;
+        },
+        isKeyDown: function (key) {
+            // Don't care about keypresses
+            return false;
+        }
+    };
+    function createMachine(memory) {
+        return new Chip8.Machine(hardware, convertUint16ArrayToUint8Array(memory));
+    }
+    BasicTests.testBoot = function (tester) {
+        var memory = new Uint16Array([0x00EE]);
+        var machine = createMachine(memory);
+        tester.ok(!machine.executeInstructions(100));
+    };
+    BasicTests.testMemorySet = function (tester) {
+        var memoryInit = new Uint16Array([
+            0x1222,
+            0x0001,
+            0x0203,
+            0x0405,
+            0x0607,
+            0x0809,
+            0x0A0B,
+            0x0C0D,
+            0x0E0F,
+            0xFFFF,
+            0xFFFF,
+            0xFFFF,
+            0xFFFF,
+            0xFFFF,
+            0xFFFF,
+            0xFFFF,
+            0xFFFF,
+            0xA202,
+            0xFF65,
+            0xA212,
+            0xFF55,
+            0x00EE,
+        ]);
+        var memoryExpected = convertUint16ArrayToUint8Array(new Uint16Array([
+            0x1222,
+            0x0001,
+            0x0203,
+            0x0405,
+            0x0607,
+            0x0809,
+            0x0A0B,
+            0x0C0D,
+            0x0E0F,
+            0x0001,
+            0x0203,
+            0x0405,
+            0x0607,
+            0x0809,
+            0x0A0B,
+            0x0C0D,
+            0x0E0F,
+            0xA202,
+            0xFF65,
+            0xA212,
+            0xFF55,
+            0x00EE,
+        ]));
+        var machine = createMachine(memoryInit);
+        machine.executeInstructions(1000);
+        var memoryAfter = machine.getMemoryCopy();
+        var memoryToCompare = memoryAfter.subarray(Chip8.Machine.LOW_MEM, Chip8.Machine.LOW_MEM + memoryExpected.length);
+        for (var i = 0; i < memoryToCompare.length; i++) {
+            tester.ok(memoryExpected[i] === memoryToCompare[i], "Didn't get the memory I expected at " + (0x200 + i) + ". Got [" + memoryToCompare[i] + "], expected [" + memoryExpected[i] + "].");
+        }
+    };
+})(BasicTests || (BasicTests = {}));
 var __extends = this.__extends || function (d, b) {
     for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
     function __() { this.constructor = d; }
@@ -37,17 +177,6 @@ var Chip8;
         }
         return MemoryAccessException;
     })(Exception);
-    function convertUint16ArrayToUint8Array(inputArray) {
-        var outputArray = new Uint8Array(inputArray.length * 2);
-        for (var i = 0; i < inputArray.length; i++) {
-            var value16 = inputArray[i];
-            outputArray[i * 2 + 1] = value16 & 0xFF;
-            value16 >>= 8;
-            outputArray[i * 2] = value16 & 0xFF;
-        }
-        return outputArray;
-    }
-    Chip8.convertUint16ArrayToUint8Array = convertUint16ArrayToUint8Array;
     // returns a number in the range [0, max)
     function randomInt(max) {
         return Math.floor(Math.random() * max);
@@ -824,140 +953,7 @@ var Chip8;
     })();
     Chip8.Machine = Machine;
 })(Chip8 || (Chip8 = {}));
-var TestRunner = (function () {
-    function TestRunner(tests) {
-        this.tests = tests;
-    }
-    TestRunner.prototype.run = function () {
-        var succeeded = true;
-        var lastMessage = null;
-        var tester = {
-            ok: function (result, message) {
-                if (!result) {
-                    succeeded = result;
-                    lastMessage = message || "No message provided.";
-                }
-            }
-        };
-        for (var _i = 0, _a = this.tests; _i < _a.length; _i++) {
-            var test = _a[_i];
-            test(tester);
-            if (!succeeded) {
-                break;
-            }
-        }
-        if (succeeded) {
-            console.log("All tests succeeded.");
-        }
-        else {
-            console.log("Test failed: " + lastMessage);
-        }
-    };
-    return TestRunner;
-})();
-function DumpMemory(memory) {
-    var output = "";
-    for (var i = 0; i < memory.length; i++) {
-        var numString = memory[i].toString(16);
-        if (numString.length == 1) {
-            numString = "0" + numString;
-        }
-        output += numString;
-        if ((i % 8) == 7 && i > 0) {
-            output += "\n";
-        }
-        else if ((i % 2) != 0) {
-            output += " ";
-        }
-    }
-    return output;
-}
-/// <reference path='../../src/Chip8.ts' />
-/// <reference path='../TestUtils.ts' />
-var BasicTests;
-(function (BasicTests) {
-    var hardware = {
-        deliverFramebuffer: function (framebuffer) {
-            // Don't care about the framebuffer
-        },
-        waitForKeyPress: function () {
-            // Don't care about keypresses
-            return 0xF;
-        },
-        isKeyDown: function (key) {
-            // Don't care about keypresses
-            return false;
-        }
-    };
-    function createMachine(memory) {
-        return new Chip8.Machine(hardware, Chip8.convertUint16ArrayToUint8Array(memory));
-    }
-    BasicTests.testBoot = function (tester) {
-        var memory = new Uint16Array([0x00EE]);
-        var machine = createMachine(memory);
-        tester.ok(!machine.executeInstructions(100));
-    };
-    BasicTests.testMemorySet = function (tester) {
-        var memoryInit = new Uint16Array([
-            0x1222,
-            0x0001,
-            0x0203,
-            0x0405,
-            0x0607,
-            0x0809,
-            0x0A0B,
-            0x0C0D,
-            0x0E0F,
-            0xFFFF,
-            0xFFFF,
-            0xFFFF,
-            0xFFFF,
-            0xFFFF,
-            0xFFFF,
-            0xFFFF,
-            0xFFFF,
-            0xA202,
-            0xFF65,
-            0xA212,
-            0xFF55,
-            0x00EE,
-        ]);
-        var memoryExpected = Chip8.convertUint16ArrayToUint8Array(new Uint16Array([
-            0x1222,
-            0x0001,
-            0x0203,
-            0x0405,
-            0x0607,
-            0x0809,
-            0x0A0B,
-            0x0C0D,
-            0x0E0F,
-            0x0001,
-            0x0203,
-            0x0405,
-            0x0607,
-            0x0809,
-            0x0A0B,
-            0x0C0D,
-            0x0E0F,
-            0xA202,
-            0xFF65,
-            0xA212,
-            0xFF55,
-            0x00EE,
-        ]));
-        var machine = createMachine(memoryInit);
-        machine.executeInstructions(1000);
-        var memoryAfter = machine.getMemoryCopy();
-        var memoryToCompare = memoryAfter.subarray(Chip8.Machine.LOW_MEM, Chip8.Machine.LOW_MEM + memoryExpected.length);
-        for (var i = 0; i < memoryToCompare.length; i++) {
-            tester.ok(memoryExpected[i] === memoryToCompare[i], "Didn't get the memory I expected at " + (0x200 + i) + ". Got [" + memoryToCompare[i] + "], expected [" + memoryExpected[i] + "].");
-        }
-    };
-})(BasicTests || (BasicTests = {}));
-/// <reference path='../src/Chip8.ts' />
-/// <reference path='TestRunner.ts' />
-/// <reference path='./Tests/Basic.ts' />
+/// <reference path='include.d.ts' />
 var tests = [
     BasicTests.testBoot,
     BasicTests.testMemorySet

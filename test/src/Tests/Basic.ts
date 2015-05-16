@@ -1,5 +1,4 @@
-/// <reference path='../../src/Chip8.ts' />
-/// <reference path='../TestUtils.ts' />
+/// <reference path='../include.d.ts' />
 
 module BasicTests {
     var hardware:Chip8.ExternalHardware = {
@@ -17,7 +16,7 @@ module BasicTests {
     };
 
     function createMachine(memory:Uint16Array) {
-        return new Chip8.Machine(hardware, Chip8.convertUint16ArrayToUint8Array(memory));
+        return new Chip8.Machine(hardware, convertUint16ArrayToUint8Array(memory));
     }
 
     export var testBoot:Test = function (tester) {
@@ -52,7 +51,7 @@ module BasicTests {
             0x00EE, // Terminate
         ]);
 
-        var memoryExpected = Chip8.convertUint16ArrayToUint8Array(new Uint16Array([
+        var memoryExpected = convertUint16ArrayToUint8Array(new Uint16Array([
             0x1222, // 0x0200
             0x0001, // 0x0202
             0x0203, // 0x0204

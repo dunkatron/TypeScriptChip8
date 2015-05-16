@@ -1,6 +1,4 @@
-/// <reference path='../src/Chip8.ts' />
-/// <reference path='TestRunner.ts' />
-/// <reference path='./Tests/Basic.ts' />
+/// <reference path='include.d.ts' />
 
 var tests:Test[] = [
     BasicTests.testBoot,

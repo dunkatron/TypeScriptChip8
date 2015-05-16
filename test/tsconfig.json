@@ -4,9 +4,9 @@
     "noImplicitAny": true,
     "removeComments": false,
     "sourceMap": true,
-    "out": "../build/test/Test.js"
+    "out": "./bin/Test.js"
   },
   "files": [
-    "Test.ts"
+    "./src/Test.ts"
   ]
 }
