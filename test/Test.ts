@@ -1,13 +1,10 @@
 /// <reference path='../src/Chip8.ts' />
 /// <reference path='TestRunner.ts' />
+/// <reference path='./Tests/Basic.ts' />
 
-var testBoot: Test = function(tester) {
-	var machine = new Chip8.Machine();
-	machine.run();
-}
-
-var tests: Test[] = [
-	testBoot
+var tests:Test[] = [
+    BasicTests.testBoot,
+    BasicTests.testMemorySet
 ];
 
 var testRunner = new TestRunner(tests);
