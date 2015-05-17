@@ -106,7 +106,14 @@ instruction = instruction: (
     x8XY5 /
     x8XY6 /
     x8XY7 /
-    x8XYE
+    x8XYE /
+    x9XY0 /
+    xANNN /
+    xBNNN /
+    xCXKK /
+    xDXYN /
+    xEX9E /
+    xEXA1
 ) {
     return instruction;
 }
@@ -298,6 +305,98 @@ x8XYE = "SLR" space+ x:register comma y:register {
         }
     }
 }
+
+// 9xy0 - SNE Vx, Vy
+x9XY0 = "SNE" space+ x:register comma y:register {
+    return {
+        template: "9XY0",
+        replacements: {
+            "X": x,
+            "Y": y
+        }
+    }
+}
+
+// Annn - LD I, addr
+xANNN = "LD" space+ "I" comma addr:addr_arg {
+    return {
+        template: "ANNN",
+        replacements: {
+            "NNN": addr
+        }
+    }
+}
+
+// Bnnn - JP V0, addr
+xBNNN = "JP" space+ "V0" comma addr:addr_arg {
+    return {
+        template: "ANNN",
+        replacements: {
+            "NNN": addr
+        }
+    }
+}
+
+// Cxkk - RND Vx, byte
+xCXKK = "RND" space+ x:register comma byte:byte {
+    return {
+        template: "CXKK",
+        replacements: {
+            "X": x,
+            "KK": byte
+        }
+    }
+}
+
+// Dxyn - DRW Vx, Vy, nibble
+xDXYN = "DRW" x:register comma y:register nibble:hex_digit {
+    return {
+        template: "DXYN",
+        replacements: {
+            "X": x,
+            "Y": y,
+            "N": nibble
+        }
+    }
+}
+
+// Ex9E - SKP Vx
+xEX9E = "SKP" space+ x:register {
+    return {
+        template: "EX9E",
+        replacements: {
+            "X": x
+        }
+    }
+}
+
+// ExA1 - SKNP Vx
+xEXA1 = "SKNP" space+ x:register {
+    return {
+        template: "EXA1",
+        replacements: {
+            "X": x
+        }
+    }
+}
+
+// Fx07 - LD Vx, DT
+
+// Fx0A - LD Vx, K
+
+// Fx15 - LD DT, Vx
+
+// Fx18 - LD ST, Vx
+
+// Fx1E - ADD I, Vx
+
+// Fx29 - LD F, Vx
+
+// Fx33 - LD B, Vx
+
+// Fx55 - LD [I], Vx
+
+// Fx65 - LD Vx, [I]
 
 expr_line = expr:expr { return expr; }
 line = space_or_newline* value:(expr_line) space_or_newline* { return value; }
