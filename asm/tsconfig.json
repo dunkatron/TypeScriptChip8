@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "noImplicitAny": true,
+    "removeComments": true,
+    "sourceMap": true,
+    "declaration": true,
+    "outDir": "./bin"
+  },
+  "files": [
+    "./src/Chip8Assembler.ts"
+  ]
+}

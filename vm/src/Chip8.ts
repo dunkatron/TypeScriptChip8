@@ -6,14 +6,10 @@ module Chip8 {
     }
 
     class Exception {
-        constructor(private message:string) {
+        constructor(public message:string) {
         }
 
         public toString() {
-            return this.message;
-        }
-
-        public getMessage() {
             return this.message;
         }
     }

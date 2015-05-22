@@ -1,0 +1,55 @@
+beg:
+CLS
+RET
+1:
+JP end
+JP fffh
+JP 1f
+JP 1b
+CALL beg
+CALL 1b
+CALL 1f
+SE V1, 53h
+SNE V3, 53h
+SE V3, V5
+1:
+LD V7, 69h
+ADD VA, 69h
+LD V5, V8
+OR Vb, Vf
+AND Vd, V6
+XOR Vd, V6
+ADD Vd, V6
+SUB Vd, V6
+SHR Vd, V6
+SHR Vd
+SUBN Vd, V6
+SHL Vd, V6
+SHL Vd
+SNE Vd, V6
+LD I, beg
+LD I, 1b
+LD I, 1f
+LD I, 200h
+JP V0, beg
+JP V0, 1b
+JP V0, 1f
+JP V0, 204h
+1:
+RND V3, 2h
+DRW Vd, V6, 3h
+SKP Vd
+SKNP Vd
+LD V3, DT
+LD V3, K
+LD DT, V3
+LD ST, V3
+ADD I, Vd
+LD F, V7
+LD B, V8
+LD I, V9
+LD , V9
+LD V9, I
+LD V9,
+end:
+RET

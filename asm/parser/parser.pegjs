@@ -2,7 +2,7 @@ start = statements
 
 label = (symbolic_label / numeric_label)
 
-symbolic_str = value:([a-zA-Z]+) { return value.join(""); }
+symbolic_str = value:([a-z_]+) { return value.join(""); }
 
 symbolic_label = name:symbolic_str ":" {
     return {
@@ -39,6 +39,13 @@ byte = value:(hex_digit+) ("H" / "h") {
         type: "raw",
         value: parseInt(value.join(""), 16)
     };
+}
+
+nibble = value:(hex_digit) ("H" / "h") {
+    return {
+        type: "raw",
+        value: parseInt(value, 16)
+    }
 }
 
 label_ref = symbolic_ref / numeric_ref
@@ -113,7 +120,16 @@ instruction = instruction: (
     xCXKK /
     xDXYN /
     xEX9E /
-    xEXA1
+    xEXA1 /
+    xFX07 /
+    xFX0A /
+    xFX15 /
+    xFX18 /
+    xFX1E /
+    xFX29 /
+    xFX33 /
+    xFX55 /
+    xFX65
 ) {
     return instruction;
 }
@@ -122,14 +138,14 @@ instruction = instruction: (
 x00E0 = "CLS" {
     return {
         template: "00E0"
-    }
+    };
 }
 
 // 00EE - RET
 x00EE = "RET" {
     return {
         template: "00EE"
-    }
+    };
 }
 
 // 1nnn - JP addr
@@ -139,7 +155,7 @@ x1NNN = "JP" space+ addr:addr_arg {
         replacements: {
             "NNN": addr
         }
-    }
+    };
 }
 
 // 2nnn - CALL addr
@@ -149,7 +165,7 @@ x2NNN = "CALL" space+ addr:addr_arg {
         replacements: {
             "NNN": addr
         }
-    }
+    };;
 }
 
 // 3xkk - SE Vx, byte
@@ -160,7 +176,7 @@ x3XKK = "SE" space+ x:register comma byte:byte {
             "X": x,
             "KK": byte
         }
-    }
+    };
 }
 
 // 4xkk - SNE Vx, byte
@@ -171,7 +187,7 @@ x4XKK = "SNE" space+ x:register comma byte:byte {
             "X": x,
             "KK": byte
         }
-    }
+    };
 }
 
 // 5xy0 - SE Vx, Vy
@@ -182,7 +198,7 @@ x5XY0 = "SE" space+ x:register comma y:register {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
 // 6xkk - LD Vx, byte
@@ -193,7 +209,7 @@ x6XKK = "LD" space+ x:register comma byte:byte {
             "X": x,
             "KK": byte
         }
-    }
+    };
 }
 
 // 7xkk - ADD Vx, byte
@@ -204,7 +220,7 @@ x7XKK = "ADD" space+ x:register comma byte:byte {
             "X": x,
             "KK": byte
         }
-    }
+    };
 }
 
 // 8xy0 - LD Vx, Vy
@@ -215,7 +231,7 @@ x8XY0 = "LD" space+ x:register comma y:register {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
 // 8xy1 - OR Vx, Vy
@@ -226,7 +242,7 @@ x8XY1 = "OR" space+ x:register comma y:register {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
 // 8xy2 - AND Vx, Vy
@@ -237,7 +253,7 @@ x8XY2 = "AND" space+ x:register comma y:register {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
 // 8xy3 - XOR Vx, Vy
@@ -248,7 +264,7 @@ x8XY3 = "XOR" space+ x:register comma y:register {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
 // 8xy4 - ADD Vx, Vy
@@ -259,7 +275,7 @@ x8XY4 = "ADD" space+ x:register comma y:register {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
 // 8xy5 - SUB Vx, Vy
@@ -270,18 +286,28 @@ x8XY5 = "SUB" space+ x:register comma y:register {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
-// 8xy6 - SHR Vx, Vy
-x8XY6 = "SHR" space+ x:register comma y:register {
+// 8xy6 - SHR Vx {, Vy}
+x8XY6 = "SHR" space+ x:register opt:(comma y:register)? {
+    var y;
+    if (opt) {
+        y = opt[1];
+    } else {
+        y = {
+            type: "raw",
+            value: 0
+        }
+    }
+
     return {
         template: "8XY6",
         replacements: {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
 // 8xy7 - SUBN Vx, Vy
@@ -292,18 +318,28 @@ x8XY7 = "SUBN" space+ x:register comma y:register {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
-// 8xyE - SHL Vx, Vy
-x8XYE = "SLR" space+ x:register comma y:register {
+// 8xyE - SHL Vx {, Vy}
+x8XYE = "SHL" space+ x:register opt:(comma y:register)? {
+    var y;
+    if (opt) {
+        y = opt[1];
+    } else {
+        y = {
+            type: "raw",
+            value: 0
+        }
+    }
+
     return {
         template: "8XYE",
         replacements: {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
 // 9xy0 - SNE Vx, Vy
@@ -314,7 +350,7 @@ x9XY0 = "SNE" space+ x:register comma y:register {
             "X": x,
             "Y": y
         }
-    }
+    };
 }
 
 // Annn - LD I, addr
@@ -324,7 +360,7 @@ xANNN = "LD" space+ "I" comma addr:addr_arg {
         replacements: {
             "NNN": addr
         }
-    }
+    };
 }
 
 // Bnnn - JP V0, addr
@@ -334,7 +370,7 @@ xBNNN = "JP" space+ "V0" comma addr:addr_arg {
         replacements: {
             "NNN": addr
         }
-    }
+    };
 }
 
 // Cxkk - RND Vx, byte
@@ -345,11 +381,11 @@ xCXKK = "RND" space+ x:register comma byte:byte {
             "X": x,
             "KK": byte
         }
-    }
+    };
 }
 
 // Dxyn - DRW Vx, Vy, nibble
-xDXYN = "DRW" x:register comma y:register nibble:hex_digit {
+xDXYN = "DRW" space+ x:register comma y:register comma nibble:nibble {
     return {
         template: "DXYN",
         replacements: {
@@ -357,7 +393,7 @@ xDXYN = "DRW" x:register comma y:register nibble:hex_digit {
             "Y": y,
             "N": nibble
         }
-    }
+    };
 }
 
 // Ex9E - SKP Vx
@@ -367,7 +403,7 @@ xEX9E = "SKP" space+ x:register {
         replacements: {
             "X": x
         }
-    }
+    };
 }
 
 // ExA1 - SKNP Vx
@@ -377,98 +413,100 @@ xEXA1 = "SKNP" space+ x:register {
         replacements: {
             "X": x
         }
-    }
+    };
 }
 
 // Fx07 - LD Vx, DT
+xFX07 = "LD" space+ x:register comma "DT" {
+    return {
+        template: "FX07",
+        replacements: {
+            "X": x
+        }
+    };
+}
 
 // Fx0A - LD Vx, K
+xFX0A = "LD" space+ x:register comma "K" {
+    return {
+        template: "FX0A",
+        replacements: {
+            "X": x
+        }
+    };
+}
 
 // Fx15 - LD DT, Vx
+xFX15 = "LD" space+ "DT" comma x:register {
+    return {
+        template: "FX15",
+        replacements: {
+            "X": x
+        }
+    };
+}
 
 // Fx18 - LD ST, Vx
+xFX18 = "LD" space+ "ST" comma x:register {
+    return {
+        template: "FX18",
+        replacements: {
+            "X": x
+        }
+    }
+}
 
 // Fx1E - ADD I, Vx
+xFX1E = "ADD" space+ "I" comma x:register {
+    return {
+        template: "FX1E",
+        replacements: {
+            "X": x
+        }
+    }
+}
 
 // Fx29 - LD F, Vx
+xFX29 = "LD" space+ "F" comma x:register {
+    return {
+        template: "FX29",
+        replacements: {
+            "X": x
+        }
+    }
+}
 
 // Fx33 - LD B, Vx
+xFX33 = "LD" space+ "B" comma x:register {
+    return {
+        template: "FX33",
+        replacements: {
+            "X": x
+        }
+    }
+}
 
 // Fx55 - LD [I], Vx
+xFX55 = "LD" space+ "I"? comma x:register {
+    return {
+        template: "FX55",
+        replacements: {
+            "X": x
+        }
+    }
+}
 
 // Fx65 - LD Vx, [I]
+xFX65 = "LD" space+ x:register comma "I"? {
+    return {
+        template: "FX65",
+        replacements: {
+            "X": x
+        }
+    }
+}
 
 expr_line = expr:expr { return expr; }
 line = space_or_newline* value:(expr_line) space_or_newline* { return value; }
 
-statements = lines:(line *) {
-    var startAddress = 0x0200;
-    var symbolicLabels = {};
-    // Find all the symbolic labels
-
-    for (var i = 0; i < lines.length; i++) {
-        var currentAddress = startAddress + i * 2;
-        var line = lines[i];
-
-        line.addr = currentAddress;
-
-        for (var k in line.labels) {
-            var label = line.labels[k];
-            if (label.type === "symbolic") {
-                if (symbolicLabels[label.name]) {
-                    expected("The label " + label.name + " is not unique.");
-                }
-                symbolicLabels[label.name] = currentAddress;
-            }
-        }
-    }
-
-    // Perform all the replacements
-
-    for (var i = 0; i < lines.length; i++) {
-        var line = lines[i];
-        var instruction = line.instruction;
-        var value = instruction.template;
-
-        if (instruction.replacements) {
-            for (var k in instruction.replacements) {
-                var replacement = instruction.replacements[k];
-                var addr = 0;
-                switch (replacement.type) {
-                    case "symbolic":
-                        if (!symbolicLabels[replacement.name]) {
-                            expected("label " + replacement.name + " to exist but it doesn't.");
-                        }
-                        addr = symbolicLabels[replacement.name];
-                    break;
-                    case "numeric":
-                        var direction = replacement.forward ? 1 : -1;
-                        var found = false;
-                        for (var j = i; j >= 0 && j < lines.length; j += direction) {
-                            var otherLine = lines[j];
-                            if (otherLine.labels[replacement.name]) {
-                                found = true;
-                                addr = otherLine.addr;
-                                break;
-                            }
-                        }
-
-                        if (!found) {
-                            expected("to find the label " + replacement.name + (replacement.forward ? " ahead " : " behind ") + " this one.");
-                        }
-                    break;
-                    case "raw":
-                        addr = replacement.value;
-                    break;
-                }
-                var hexAddr = "0000" + addr.toString(16);
-                value = value.replace(k, hexAddr.substr(hexAddr.length - k.length));
-            }
-        }
-
-        line.value = value;
-
-    }
-
-    return lines.map(function (item) { return item.value; });
-}
+statements = lines:(line *)

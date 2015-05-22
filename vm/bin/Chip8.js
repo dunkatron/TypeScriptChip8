@@ -18,9 +18,6 @@ var Chip8;
         Exception.prototype.toString = function () {
             return this.message;
         };
-        Exception.prototype.getMessage = function () {
-            return this.message;
-        };
         return Exception;
     })();
     var AssertionException = (function (_super) {
