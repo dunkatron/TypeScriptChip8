@@ -68,6 +68,10 @@ chip8 chip8_newVM(const uint8_t *programMemory, uint16_t programMemorySize, chip
     return c;
 }
 
+static inline bool *getScreenPixel(chip8 *vm, int x, int y) {
+    return &(vm->_screen[y * CHIP8_SCREEN_WIDTH + x]);
+}
+
 static inline vm_addr_t popStack(chip8 *vm) {
     vm->_stackPtr--;
     return vm->_stack[vm->_stackPtr];
@@ -211,10 +215,28 @@ IMPL(CXKK) {
     V[X] = randomValue & KK;
 }
 
-// TODO
 // Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
 IMPL(DXYN) {
-    
+    int xStart = V[X];
+    V[0xF] = 0;
+    for (vm_addr_t i = 0; i < N; i++) {
+        int y = i + V[Y];
+        byte_t spriteRow = MEM[I + i];
+        if (y < CHIP8_SCREEN_HEIGHT) {
+            for (int x = xStart + 8 - 1; x >= 0; x--) {
+                if (x < CHIP8_SCREEN_WIDTH) {
+                    bool spritePixel = spriteRow & 0x1;
+                    bool *screenPixel = getScreenPixel(vm, x, y);
+                    if (spritePixel && *screenPixel) {
+                        V[0xF] = 1;
+                    }
+                    
+                    *screenPixel = *screenPixel ^ spritePixel;
+                }
+                spriteRow >>= 1;
+            }
+        }
+    }
 }
 
 // TODO
